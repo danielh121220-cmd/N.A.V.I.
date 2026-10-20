@@ -1,0 +1,14 @@
+{
+  "name": "navi-demo-build",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs && python assemble.py"
+  },
+  "devDependencies": {
+    "@noble/hashes": "1.6.1",
+    "buffer": "6.0.3",
+    "esbuild": "0.24.2",
+    "path-browserify": "1.0.1",
+    "sql.js": "1.11.0"
+  }
+}

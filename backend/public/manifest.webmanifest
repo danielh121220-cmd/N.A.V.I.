@@ -1,0 +1,23 @@
+{
+  "name": "N.A.V.I · Asistencia escolar",
+  "short_name": "N.A.V.I",
+  "description": "Pase de lista con NFC, avisos a representantes y revisión por excepción.",
+  "lang": "es-EC",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F2F3F7",
+  "theme_color": "#0A7CFF",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Pase de lista", "url": "/#/lista", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Revisión", "url": "/#/revision", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

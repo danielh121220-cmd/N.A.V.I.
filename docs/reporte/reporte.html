@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Reporte técnico N.A.V.I</title>
+<style>
+@page { size: A4; margin: 22mm 20mm 22mm 20mm; }
+:root { --ink: #1B1F2A; --soft: #5A6172; --line: #DCE0E8; --accent: #1366D6; --accent-2: #0E9F6E; --warn: #C2410C; --paper: #FFFFFF; --tint: #F3F6FB; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; color: var(--ink); background: var(--paper); font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 10.6pt; line-height: 1.55; }
+h1, h2, h3 { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: var(--ink); line-height: 1.2; text-wrap: balance; }
+h2 { font-size: 17pt; margin: 0 0 10pt; padding-top: 2pt; letter-spacing: -0.01em; page-break-after: avoid; }
+h2 .n { color: var(--accent); margin-right: 8pt; }
+h3 { font-size: 12pt; margin: 14pt 0 5pt; page-break-after: avoid; }
+p { margin: 0 0 7pt; text-align: justify; hyphens: auto; }
+ul, ol { margin: 0 0 8pt 16pt; padding: 0; }
+li { margin-bottom: 3pt; }
+section { page-break-before: always; }
+section.flow { page-break-before: auto; margin-top: 22pt; }
+section.flow h2 { border-top: 0.8pt solid var(--line); padding-top: 12pt; }
+table { width: 100%; border-collapse: collapse; margin: 6pt 0 10pt; font-size: 9.4pt; page-break-inside: avoid; }
+th, td { border-bottom: 0.6pt solid var(--line); padding: 4.5pt 6pt; text-align: left; vertical-align: top; }
+th { background: var(--tint); font-weight: 600; color: var(--ink); }
+tr { page-break-inside: avoid; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+code, pre { font-family: Consolas, "Cascadia Mono", "Courier New", monospace; }
+code { font-size: 9pt; background: var(--tint); padding: 0 3pt; border-radius: 3pt; }
+pre { font-size: 8.2pt; line-height: 1.4; background: #0F172A; color: #E2E8F0; padding: 9pt 11pt; border-radius: 6pt; white-space: pre-wrap; page-break-inside: avoid; margin: 6pt 0 10pt; }
+.note { border-left: 3pt solid var(--accent); background: var(--tint); padding: 7pt 10pt; margin: 8pt 0 10pt; font-size: 9.8pt; page-break-inside: avoid; }
+.note.warn { border-color: var(--warn); }
+.note.ok { border-color: var(--accent-2); }
+.fill { color: var(--warn); font-weight: 600; }
+figure { margin: 8pt 0 12pt; page-break-inside: avoid; text-align: center; }
+figure img { max-width: 100%; border: 0.6pt solid var(--line); border-radius: 6pt; }
+figure.phones { display: flex; gap: 10pt; justify-content: center; }
+figure.phones div { flex: 1; max-width: 32%; }
+figure.phones img { width: 100%; }
+figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: center; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: space-between; padding: 6mm 0; }
+.cover .inst { font-size: 13pt; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--soft); text-align: center; }
+.cover .event { text-align: center; color: var(--soft); font-size: 10.5pt; margin-top: 4pt; }
+.cover .mid { text-align: center; }
+.cover .mid svg { width: 120pt; height: 120pt; }
+.cover h1 { font-size: 38pt; margin: 6pt 0 2pt; letter-spacing: 0.02em; }
+.cover .sub { font-size: 14pt; color: var(--soft); max-width: 120mm; margin: 0 auto; text-wrap: balance; }
+.cover .who { width: 120mm; margin: 0 auto; font-size: 11pt; }
+.cover .who td { border: 0; padding: 3pt 0; }
+.cover .who td:first-child { color: var(--soft); width: 45mm; }
+.toc { list-style: none; margin: 0; padding: 0; }
+.toc li { display: flex; gap: 8pt; padding: 5pt 0; border-bottom: 0.6pt dotted var(--line); }
+.toc li span:first-child { color: var(--accent); width: 18pt; font-weight: 600; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8pt; margin: 8pt 0 12pt; }
+.kpi { border: 0.6pt solid var(--line); border-radius: 6pt; padding: 7pt 8pt; page-break-inside: avoid; }
+.kpi b { display: block; font-size: 16pt; color: var(--accent); font-variant-numeric: tabular-nums; }
+.kpi small { color: var(--soft); font-size: 8.4pt; line-height: 1.3; display: block; }
+.diagram { width: 100%; border: 0.6pt solid var(--line); border-radius: 6pt; }
+.refs p { text-indent: -14pt; padding-left: 14pt; text-align: left; font-size: 9.4pt; margin-bottom: 5pt; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+.photo-slot { border: 1.2pt dashed var(--warn); border-radius: 6pt; height: 58mm; display: grid; place-items: center; color: var(--warn); font-size: 9.5pt; text-align: center; padding: 8pt; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div>
+    <div class="inst">Colegio Fiscomisional Salesiano Domingo Comín</div>
+    <div class="event">Ateneo Robotics League · 2.ª edición · Categoría Innovación Tecnológica</div>
+  </div>
+  <div class="mid">
+    <svg viewBox="0 0 100 100" aria-hidden="true"><path fill="#1382FD" d="M50 16C54 16 58 20 62 26L86 70C90 77 85 86 77 86L23 86C15 86 10 77 14 70L38 26C42 20 46 16 50 16Z"/><rect x="41" y="54" width="8" height="20" rx="4" fill="#fff"/><rect x="53" y="54" width="8" height="20" rx="4" fill="#fff"/></svg>
+    <h1>N.A.V.I</h1>
+    <div class="sub">NFC Attendance &amp; Verification Intelligence: asistencia escolar con tarjetas NFC, verificación contra la suplantación, avisos inmediatos a representantes y ficha médica de emergencia</div>
+  </div>
+  <table class="who">
+    <tr><td>Integrantes</td><td>Daniel Heredia<br><span class="fill">[Nombre del segundo integrante, si lo hay]</span></td></tr>
+    <tr><td>Docente responsable</td><td><span class="fill">[Nombre del docente responsable]</span></td></tr>
+    <tr><td>Especialidad</td><td>Bachillerato Técnico en Mecatrónica</td></tr>
+    <tr><td>Ciudad y fecha</td><td>Guayaquil, Ecuador · octubre de 2026</td></tr>
+  </table>
+</div>
+
+<section>
+  <h2>Contenido</h2>
+  <ul class="toc">
+    <li><span>1</span><span>Introducción</span></li>
+    <li><span>2</span><span>Objetivos</span></li>
+    <li><span>3</span><span>Planteamiento del problema</span></li>
+    <li><span>4</span><span>Desarrollo y proceso de construcción</span></li>
+    <li><span>5</span><span>Especificaciones técnicas</span></li>
+    <li><span>6</span><span>Programación</span></li>
+    <li><span>7</span><span>Resultados</span></li>
+    <li><span>8</span><span>Impacto tecnológico, social y ambiental</span></li>
+    <li><span>9</span><span>Conclusiones y recomendaciones</span></li>
+    <li><span>10</span><span>Anexos</span></li>
+    <li><span>11</span><span>Referencias bibliográficas</span></li>
+  </ul>
+  <div class="note" style="margin-top:22pt">Este reporte describe el estado del proyecto en octubre de 2026. Los textos en <span class="fill">naranja</span> son espacios que el equipo debe completar con sus datos y con las mediciones hechas en el aula antes de entregarlo.</div>
+</section>
+
+<section>
+  <h2><span class="n">1</span>Introducción</h2>
+  <p>En la mayoría de colegios del Ecuador la asistencia todavía se toma leyendo una lista en voz alta al inicio de cada hora de clase. Es un proceso lento, que depende de la memoria y la atención del docente, y que no deja evidencia confiable cuando un estudiante responde "presente" por un compañero. Además, cuando un estudiante no llega, la familia suele enterarse tarde, a veces días después, aunque el Reglamento General a la Ley Orgánica de Educación Intercultural (LOEI) pide notificar las inasistencias de forma inmediata.</p>
+  <p>N.A.V.I (NFC Attendance &amp; Verification Intelligence) es un sistema de bajo costo que automatiza ese proceso. Cada estudiante acerca su tarjeta NFC a un lector construido con un ESP32 y un módulo PN532, programado en C++ con el entorno Arduino IDE. En menos de un segundo el lector identifica la tarjeta, muestra el resultado en una pantalla OLED con luces y sonido, y lo envía a un servidor que corre en una computadora del colegio. El servidor decide si el estudiante llegó a tiempo o con atraso, marca como ausentes a quienes no llegaron y avisa a los representantes por correo, WhatsApp o Telegram.</p>
+  <p>El proyecto no se limita a contar asistencias. Incluye una revisión contra la suplantación (un estudiante que pasa la tarjeta de otro), una cámara que solo guarda evidencia cuando hay una duda, una credencial firmada criptográficamente dentro de cada tarjeta, una ficha médica de emergencia que cualquier persona puede abrir acercando su celular a la tarjeta del estudiante, y un entorno amigable para los estudiantes: cada uno tiene una mascota digital única que crece cuando llega a tiempo.</p>
+  <p>El sistema funciona en la red local del colegio, sin depender de internet, y guarda los registros en el propio lector si se cae el WiFi. Se acompaña de una aplicación web instalable y de una aplicación para Android.</p>
+</section>
+
+<section class="flow">
+  <h2><span class="n">2</span>Objetivos</h2>
+  <h3>Objetivo general</h3>
+  <p>Diseñar y construir un sistema de registro de asistencia escolar basado en tarjetas NFC y en la plataforma Arduino (ESP32), que reduzca el tiempo del pase de lista, haga detectable la suplantación, notifique de inmediato a los representantes y ofrezca información médica de emergencia, protegiendo los datos personales de los estudiantes.</p>
+  <h3>Objetivos específicos</h3>
+  <ol>
+    <li>Construir un lector de aula con ESP32, PN532, pantalla OLED, LEDs y buzzer que registre una asistencia en menos de un segundo y siga funcionando sin conexión.</li>
+    <li>Programar un servidor que clasifique cada registro (puntual, atraso, ausente) según el horario de cada curso y que notifique a los representantes de forma automática.</li>
+    <li>Implementar mecanismos verificables contra la suplantación: detección de tarjetas consecutivas, sensor de presencia, foto de evidencia y una credencial firmada con HMAC-SHA256 dentro de la tarjeta.</li>
+    <li>Desarrollar una aplicación para docentes y estudiantes, instalable en computadoras y celulares, con pase de lista por excepción y una mascota digital única por estudiante.</li>
+    <li>Ofrecer una ficha médica de emergencia accesible desde cualquier celular, con consentimiento del representante y registro de cada acceso.</li>
+    <li>Validar el funcionamiento con pruebas medibles y documentar sus limitaciones.</li>
+  </ol>
+</section>
+
+<section class="flow">
+  <h2><span class="n">3</span>Planteamiento del problema</h2>
+  <h3>3.1 La necesidad</h3>
+  <p>Según datos del Ministerio de Educación publicados por Lupa Media, en el año lectivo 2023-2024 abandonaron sus estudios 72.644 estudiantes, una tasa del 1,75 %. El plan nacional "Cuidemos de ti" del Ministerio de Educación (2024) reporta para la provincia del Guayas una tasa de abandono del 1,71 % (18.735 estudiantes) en 2022-2023. Antes de que un estudiante abandone suele haber un patrón de faltas y atrasos; detectarlo a tiempo y avisar a la familia es una de las intervenciones más estudiadas.</p>
+  <p>La evidencia internacional muestra que avisar a los padres funciona. En un ensayo aleatorizado en 22 escuelas de Virginia Occidental, las alertas automáticas a los padres aumentaron la asistencia a clases en un 12 % y redujeron las materias reprobadas en un 28 % (Bergman y Chan, 2021). En Filadelfia, el envío de información a las familias redujo el ausentismo crónico en un 10 % o más en sus versiones más eficaces (Rogers y Feller, 2018). En Chile, los mensajes frecuentes a los padres aumentaron en 4,5 puntos porcentuales la proporción de estudiantes que cumplía el requisito de asistencia para ser promovidos (Berlinski et al., 2021).</p>
+  <p>El pase de lista manual también consume tiempo de clase. No existe una medición oficial para el Ecuador; estudios de prototipos RFID en otros países estiman entre 3 y 10 minutos por clase (Turpo Benique, 2025; Ege y Özdemir, 2026). Con un supuesto conservador de 4 minutos en 6 horas diarias durante 200 días, un curso pierde unas 80 horas al año.</p>
+  <h3>3.2 El marco legal</h3>
+  <ul>
+    <li><b>Reglamento General a la LOEI.</b> El control y registro de asistencia es obligatorio (art. 169). La inasistencia de uno o dos días debe notificarse inmediatamente a los representantes, que la justifican hasta dos días después del retorno (art. 170). En Básica Superior y Bachillerato, superar el 10 % de inasistencias injustificadas causa la pérdida del año (art. 172). N.A.V.I registra, notifica y permite justificar dentro de la misma herramienta.</li>
+    <li><b>Ley Orgánica de Protección de Datos Personales (LOPDP, 2021) y su reglamento.</b> Los datos de salud y los biométricos son datos sensibles. Los datos de menores de 15 años requieren el consentimiento del representante, y los datos sensibles de menores, su consentimiento expreso. En 2026 la Superintendencia de Protección de Datos Personales restringió el uso de datos biométricos de menores con fines de identificación cuando existe un medio menos invasivo. Por eso N.A.V.I usa tarjetas NFC y no huella ni reconocimiento facial.</li>
+  </ul>
+  <h3>3.3 Por qué las soluciones actuales no bastan</h3>
+  <p>Plataformas como Educar Ecuador o Idukay permiten registrar la asistencia y comunicarse con las familias, pero el dato lo ingresa el docente a mano. Los lectores biométricos capturan el dato automáticamente, pero tratan datos biométricos de menores. N.A.V.I se ubica en medio: captura el dato en el aula de forma automática, con un medio no biométrico, y puede complementar a esas plataformas en lugar de reemplazarlas.</p>
+  <div class="note warn">Las cifras del informe PISA 2025 sobre inasistencia y atrasos en el Ecuador que circularon en la prensa en septiembre de 2026 no se citan como dato central porque aún no se han verificado en la publicación oficial de la OCDE.</div>
+</section>
+
+<section class="flow">
+  <h2><span class="n">4</span>Desarrollo y proceso de construcción</h2>
+  <p>El proyecto se desarrolló en etapas iterativas. Cada etapa terminó con pruebas y con una lista de errores corregidos, que se documenta en el archivo <code>docs/ERRORES_CORREGIDOS.md</code> del repositorio.</p>
+  <table>
+    <tr><th>Etapa</th><th>Qué se hizo</th><th>Resultado</th></tr>
+    <tr><td>1. Investigación</td><td>Revisión de normativa (LOEI, LOPDP), de estudios sobre avisos a familias y de la seguridad de las tarjetas NFC (MIFARE, NTAG).</td><td>Se descartó la biometría y se eligieron tarjetas NTAG213/215.</td></tr>
+    <tr><td>2. Diseño del sistema</td><td>Arquitectura en tres partes: lector de aula, servidor local y aplicación. Definición de estados (puntual, atraso, ausente) y de las señales del lector.</td><td>Diagrama de bloques (figura 1) y tabla de conexiones.</td></tr>
+    <tr><td>3. Montaje electrónico</td><td>Conexión del ESP32 con el PN532 y la OLED por el bus I2C, LEDs con resistencias de 220 Ω, buzzer pasivo, línea de disparo hacia el ESP32-CAM.</td><td>Prototipo en protoboard <span class="fill">[agregar fotos en el anexo A]</span>.</td></tr>
+    <tr><td>4. Programación del lector</td><td>Firmware en C++ con Arduino IDE: lectura NFC sin bloqueo, envío por HTTP, cola sin conexión en LittleFS, reloj sincronizado con el servidor, lectura de la credencial NDEF.</td><td>Registro en menos de 1 s por estudiante.</td></tr>
+    <tr><td>5. Servidor y aplicación</td><td>Node.js con base de datos SQLite, API REST, WebSocket en tiempo real, aplicación web instalable (PWA) y aplicación Android con NFC nativo.</td><td>Panel en vivo, pase de lista, revisión, avisos y portal del estudiante.</td></tr>
+    <tr><td>6. Seguridad</td><td>Detección de ráfagas y patrones, cámara de evidencia, credencial HMAC-SHA256 ligada al UID, PIN y vinculación del celular del estudiante.</td><td>Copias del número de tarjeta marcadas para revisión.</td></tr>
+    <tr><td>7. Pruebas y mejora</td><td>Pruebas automáticas de la interfaz en celular y computadora, pruebas del servidor, prueba del decodificador NDEF del firmware y verificación de la firma del APK.</td><td>Ver capítulo 7.</td></tr>
+  </table>
+  <h3>Decisiones de diseño importantes</h3>
+  <ul>
+    <li><b>Pase de lista por excepción.</b> El docente no llama a nadie: la lista ya viene marcada por las tarjetas y solo toca a quien no está en el aula. Así detecta en segundos una tarjeta que marcó sin que su dueño esté presente.</li>
+    <li><b>Revisión en lugar de acusación.</b> El sistema nunca declara un fraude por sí solo. Marca el registro "para revisión" con el motivo y las fotos, y el docente decide.</li>
+    <li><b>Funcionamiento local.</b> El servidor corre en la red del colegio. Si se cae el WiFi, el lector guarda cada registro con su hora y lo envía al volver la conexión.</li>
+    <li><b>Mascota privada y cooperativa.</b> Siguiendo la investigación sobre gamificación (Sailer y Homner, 2020) y las críticas a los rankings públicos de conducta (Manolev et al., 2019), la mascota solo la ve su dueño, nunca "muere" y no se ve afectada por faltas justificadas. La meta semanal es de todo el curso.</li>
+  </ul>
+</section>
+
+<section class="flow">
+  <h2><span class="n">5</span>Especificaciones técnicas</h2>
+  <h3>5.1 Arquitectura</h3>
+  <figure>
+    <svg class="diagram" viewBox="0 0 760 360" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#5A6172"/></marker></defs>
+      <rect x="20" y="40" width="150" height="96" rx="10" fill="#EEF4FF" stroke="#1366D6"/>
+      <text x="95" y="64" text-anchor="middle" font-weight="700">Tarjeta NTAG213</text>
+      <text x="95" y="84" text-anchor="middle" fill="#5A6172">UID de 7 bytes</text>
+      <text x="95" y="102" text-anchor="middle" fill="#5A6172">Enlace de emergencia</text>
+      <text x="95" y="120" text-anchor="middle" fill="#5A6172">Credencial firmada</text>
+      <rect x="230" y="24" width="190" height="128" rx="10" fill="#EEF4FF" stroke="#1366D6"/>
+      <text x="325" y="48" text-anchor="middle" font-weight="700">Lector de aula</text>
+      <text x="325" y="68" text-anchor="middle" fill="#5A6172">ESP32 + PN532 (I2C)</text>
+      <text x="325" y="86" text-anchor="middle" fill="#5A6172">OLED, LEDs, buzzer</text>
+      <text x="325" y="104" text-anchor="middle" fill="#5A6172">VL53L0X opcional</text>
+      <text x="325" y="122" text-anchor="middle" fill="#5A6172">Cola sin conexión</text>
+      <text x="325" y="140" text-anchor="middle" fill="#5A6172">C++ · Arduino IDE</text>
+      <rect x="230" y="200" width="190" height="64" rx="10" fill="#F3F6FB" stroke="#5A6172"/>
+      <text x="325" y="226" text-anchor="middle" font-weight="700">ESP32-CAM</text>
+      <text x="325" y="246" text-anchor="middle" fill="#5A6172">Foto de evidencia</text>
+      <rect x="480" y="90" width="170" height="120" rx="10" fill="#ECFDF5" stroke="#0E9F6E"/>
+      <text x="565" y="116" text-anchor="middle" font-weight="700">Servidor local</text>
+      <text x="565" y="136" text-anchor="middle" fill="#5A6172">PC del colegio</text>
+      <text x="565" y="154" text-anchor="middle" fill="#5A6172">Node.js + SQLite</text>
+      <text x="565" y="172" text-anchor="middle" fill="#5A6172">API REST + WebSocket</text>
+      <text x="565" y="190" text-anchor="middle" fill="#5A6172">Verifica la firma HMAC</text>
+      <rect x="480" y="250" width="170" height="80" rx="10" fill="#F3F6FB" stroke="#5A6172"/>
+      <text x="565" y="276" text-anchor="middle" font-weight="700">App docentes y</text>
+      <text x="565" y="294" text-anchor="middle" font-weight="700">estudiantes</text>
+      <text x="565" y="314" text-anchor="middle" fill="#5A6172">PWA y APK Android</text>
+      <rect x="480" y="10" width="260" height="54" rx="10" fill="#FFF7ED" stroke="#C2410C"/>
+      <text x="610" y="32" text-anchor="middle" font-weight="700">Representantes</text>
+      <text x="610" y="50" text-anchor="middle" fill="#5A6172">Correo · WhatsApp · Telegram</text>
+      <rect x="20" y="230" width="170" height="80" rx="10" fill="#FEF2F2" stroke="#DC2626"/>
+      <text x="105" y="256" text-anchor="middle" font-weight="700">Cualquier celular</text>
+      <text x="105" y="276" text-anchor="middle" fill="#5A6172">Lee el enlace NDEF</text>
+      <text x="105" y="294" text-anchor="middle" fill="#5A6172">Ficha de emergencia</text>
+      <path d="M170 88H226" stroke="#5A6172" stroke-width="1.6" marker-end="url(#ar)"/>
+      <text x="198" y="80" text-anchor="middle" fill="#5A6172" font-size="10">NFC</text>
+      <path d="M325 152V196" stroke="#5A6172" stroke-width="1.6" marker-end="url(#ar)"/>
+      <text x="364" y="178" text-anchor="middle" fill="#5A6172" font-size="10">GPIO 25</text>
+      <path d="M420 100H476" stroke="#5A6172" stroke-width="1.6" marker-end="url(#ar)"/>
+      <text x="448" y="92" text-anchor="middle" fill="#5A6172" font-size="10">WiFi</text>
+      <path d="M420 232C450 232 450 190 476 186" stroke="#5A6172" stroke-width="1.6" fill="none" marker-end="url(#ar)"/>
+      <path d="M565 90V68" stroke="#5A6172" stroke-width="1.6" marker-end="url(#ar)"/>
+      <path d="M565 210V246" stroke="#5A6172" stroke-width="1.6" marker-end="url(#ar)"/>
+      <path d="M95 136V226" stroke="#5A6172" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+      <path d="M190 280C320 330 400 330 476 300" stroke="#5A6172" stroke-width="1.6" stroke-dasharray="4 3" fill="none" marker-end="url(#ar)"/>
+      <text x="330" y="336" text-anchor="middle" fill="#5A6172" font-size="10">Abre la ficha (con consentimiento) y avisa al colegio</text>
+    </svg>
+    <figcaption>Figura 1. Arquitectura de N.A.V.I.</figcaption>
+  </figure>
+  <h3>5.2 Componentes del terminal de aula</h3>
+  <table>
+    <tr><th>Componente</th><th>Función</th><th class="num">Costo aprox. (USD)</th></tr>
+    <tr><td>ESP32 DevKit V1</td><td>Microcontrolador con WiFi; programa del lector en C++</td><td class="num">8 – 12</td></tr>
+    <tr><td>Módulo NFC PN532 V3 (modo I2C)</td><td>Lee tarjetas ISO 14443A (NTAG y MIFARE)</td><td class="num">8 – 12</td></tr>
+    <tr><td>Pantalla OLED SSD1306 0,96"</td><td>Muestra saludo, estado y hora</td><td class="num">5 – 8</td></tr>
+    <tr><td>LEDs verde, amarillo y rojo + 3 resistencias 220 Ω</td><td>Señal visual del resultado</td><td class="num">0,40</td></tr>
+    <tr><td>Buzzer pasivo</td><td>Tonos distintos para cada resultado</td><td class="num">0,50</td></tr>
+    <tr><td>Tarjetas NTAG213/215</td><td>Identificación del estudiante, ficha y credencial</td><td class="num">0,40 – 1 c/u</td></tr>
+    <tr><td>Protoboard, cables y fuente 5 V</td><td>Montaje y alimentación</td><td class="num">8 – 12</td></tr>
+    <tr><td>ESP32-CAM con base MB (opcional)</td><td>Foto de evidencia en cada toque</td><td class="num">10 – 15</td></tr>
+    <tr><td>Sensor VL53L0X (opcional)</td><td>Detecta si una misma persona pasa dos tarjetas</td><td class="num">5 – 8</td></tr>
+    <tr><td colspan="2"><b>Total por aula sin cámara / con cámara</b></td><td class="num"><b>30 – 45 / 45 – 65</b></td></tr>
+  </table>
+  <p>Precios de referencia de tiendas de electrónica y tiendas en línea, que varían. <span class="fill">[Reemplazar por los precios reales pagados y adjuntar la cotización en anexos.]</span></p>
+  <h3>5.3 Conexiones</h3>
+  <table>
+    <tr><th>Componente</th><th>Pin del componente</th><th>Pin del ESP32</th></tr>
+    <tr><td>PN532 (switches CH1 OFF, CH2 ON)</td><td>VCC · GND · SDA · SCL · IRQ · RSTO</td><td>5V · GND · GPIO 21 · GPIO 22 · GPIO 26 · GPIO 27</td></tr>
+    <tr><td>OLED SSD1306</td><td>VCC · GND · SDA · SCL</td><td>3.3V · GND · GPIO 21 · GPIO 22</td></tr>
+    <tr><td>LED verde / amarillo / rojo</td><td>Ánodo (con 220 Ω a GND)</td><td>GPIO 18 / GPIO 5 / GPIO 19</td></tr>
+    <tr><td>Buzzer pasivo</td><td>+ / –</td><td>GPIO 4 / GND</td></tr>
+    <tr><td>Disparo de cámara</td><td>GPIO 13 del ESP32-CAM</td><td>GPIO 25 (y GND común)</td></tr>
+    <tr><td>VL53L0X (opcional)</td><td>VIN · GND · SDA · SCL</td><td>3.3V · GND · GPIO 21 · GPIO 22</td></tr>
+  </table>
+  <h3>5.4 Software</h3>
+  <table>
+    <tr><th>Parte</th><th>Tecnología</th><th>Detalle</th></tr>
+    <tr><td>Firmware del lector y la cámara</td><td>C++ en Arduino IDE 2, núcleo ESP32 de Espressif 3.x</td><td>Librerías Adafruit PN532, Adafruit SSD1306, Adafruit GFX, ArduinoJson 7, LittleFS, Adafruit VL53L0X</td></tr>
+    <tr><td>Servidor</td><td>Node.js 22, Express 5, better-sqlite3, ws, nodemailer</td><td>11 módulos, base de datos SQLite en modo WAL</td></tr>
+    <tr><td>Aplicación web</td><td>HTML, CSS y JavaScript sin frameworks</td><td>Instalable (PWA), modo claro y oscuro, tiempo real por WebSocket</td></tr>
+    <tr><td>Aplicación Android</td><td>Java, WebView y API NFC de Android (minSdk 24)</td><td>Lee y graba tarjetas NTAG con el NFC del celular</td></tr>
+  </table>
+  <h3>5.5 Seguridad de las tarjetas</h3>
+  <table>
+    <tr><th>Tarjeta</th><th>Seguridad</th><th>Uso en N.A.V.I</th></tr>
+    <tr><td>MIFARE Classic</td><td>Cifrado Crypto1 roto desde 2008 (Garcia et al., 2008); se copia en segundos</td><td>Solo para asistencia; no se recomienda</td></tr>
+    <tr><td>NTAG213/215</td><td>UID fijo de 7 bytes, contraseña de 32 bits y firma de originalidad de NXP (NXP Semiconductors, 2015)</td><td>Opción actual: barata y legible por cualquier celular</td></tr>
+    <tr><td>NTAG 424 DNA</td><td>AES-128 y un código distinto en cada toque (SUN)</td><td>Mejora futura propuesta</td></tr>
+  </table>
+  <p>Cada tarjeta guarda una credencial con el formato <code>NAVI1.código.versión.firma</code>. La firma es un HMAC-SHA256 (Krawczyk et al., 1997) calculado por el servidor sobre el código del estudiante, el UID de la tarjeta y la versión, con una clave que nunca sale del servidor. Una credencial no se puede fabricar sin esa clave, no sirve en otra tarjeta y deja de funcionar si el docente emite una nueva por pérdida.</p>
+</section>
+
+<section class="flow">
+  <h2><span class="n">6</span>Programación</h2>
+  <h3>6.1 Lógica del lector (C++)</h3>
+  <ol>
+    <li>El bucle principal pregunta al PN532 por una tarjeta con un tiempo de espera corto (60 ms), sin detener el resto de tareas: reconexión WiFi, envío de la cola y señal de vida al servidor cada 30 s.</li>
+    <li>Al detectar una tarjeta lee su UID, ignora la misma tarjeta sostenida durante 3 s, dispara la cámara por el GPIO 25 y muestra "LEYENDO".</li>
+    <li>Si la tarjeta es NTAG (UID de 7 bytes) lee la memoria NDEF página por página y busca el registro de texto que empieza con <code>NAVI1.</code>.</li>
+    <li>Envía por HTTP el UID, la credencial y la identificación del terminal. Si no hay red, guarda el registro con su hora real en un archivo de LittleFS y lo reenvía después.</li>
+    <li>Con la respuesta enciende el LED, toca el tono y escribe el saludo en la OLED.</li>
+  </ol>
+  <pre>String readCredential(uint8_t uidLen) {
+  if (uidLen != 7) return "";
+  uint8_t mem[144];
+  uint8_t page[4];
+  uint16_t n = 0;
+  for (uint8_t p = 4; p &lt; 40 &amp;&amp; n + 4 &lt;= sizeof(mem); p++) {
+    if (!nfc.ntag2xx_ReadPage(p, page)) break;
+    memcpy(mem + n, page, 4);
+    n += 4;
+    if (ndefComplete(mem, n)) break;
+  }
+  return parseCredential(mem, n);
+}</pre>
+  <p>La función lee como máximo 144 bytes (la memoria de usuario de una NTAG213) y se detiene en cuanto el mensaje NDEF está completo, para no demorar el registro. <code>parseCredential</code> recorre los bloques TLV y los registros NDEF (encabezado, longitud del tipo, longitud de los datos) y devuelve el texto de la credencial.</p>
+  <pre>void sendScan(const String &amp;uid, const String &amp;cred, bool ntag) {
+  if (WiFi.status() != WL_CONNECTED) {
+    queueOffline(uid, cred, ntag);
+    feedback("OFFLINE", false, "GUARDADO", "SIN RED");
+    return;
+  }
+  JsonDocument doc;
+  doc["uid"] = uid;
+  doc["terminal_id"] = TERMINAL_ID;
+  if (cred.length()) doc["cred"] = cred;
+  if (ntag) doc["ntag"] = true;
+  ...
+}</pre>
+  <h3>6.2 Lógica del servidor</h3>
+  <ul>
+    <li><b>Estado por hora.</b> Con la hora de entrada y la tolerancia de cada curso decide A tiempo o Atraso. Al pasar el límite de ausencia marca como ausentes a quienes no llegaron y avisa a sus representantes. Una llegada posterior cambia el ausente a atraso.</li>
+    <li><b>Revisión anti-suplantación.</b> Marca para revisión dos tarjetas distintas en menos de 1,5 s, dos tarjetas en la misma presencia del sensor, parejas que se marcan juntas varios días, una foto demasiado pequeña (cámara tapada) y una tarjeta NTAG sin firma válida.</li>
+    <li><b>Credencial.</b> Calcula el HMAC esperado y lo compara en tiempo constante. Distingue entre credencial falsificada, copiada de otra tarjeta y reemplazada.</li>
+    <li><b>Avisos.</b> Correo con diseño propio y copia al DECE, WhatsApp automático (API oficial de Meta) o de un toque, y Telegram. Los errores se explican en español y los correos fallidos se reintentan.</li>
+    <li><b>Ficha médica.</b> Se publica en un enlace con un identificador aleatorio solo si el representante lo autorizó. Cada apertura queda registrada y avisa al colegio y a la familia.</li>
+  </ul>
+  <pre>function verify(text, uid) {
+  const p = parse(text);
+  if (!p) return { ok: false, reason: 'FORMATO' };
+  const student = db.q('SELECT * FROM students WHERE student_code = ? AND active = 1').get(p.code);
+  if (!student) return { ok: false, reason: 'DESCONOCIDO' };
+  if (cleanUid(uid) &amp;&amp; cleanUid(uid) !== student.nfc_uid) return { ok: false, reason: 'OTRA_TARJETA', student };
+  if (!equal(signature(p.code, student.nfc_uid, p.ver), p.sig)) return { ok: false, reason: 'FIRMA', student };
+  if (p.ver !== student.card_ver) return { ok: false, reason: 'REVOCADA', student };
+  return { ok: true, student };
+}</pre>
+  <h3>6.3 Aplicación</h3>
+  <p>La aplicación de docentes muestra el día en vivo, el pase de lista por excepción, la revisión con fotos, los estudiantes con su ficha médica, el simulador del lector y los ajustes de avisos. El portal del estudiante se abre acercando su tarjeta al celular: la primera vez pide crear un PIN y vincula ese celular. Después muestra su mascota, su estado de hoy, su semana, su nivel, sus logros y la meta del curso. En Android la lectura y grabación de tarjetas usa la API NFC nativa; en el navegador Chrome para Android usa Web NFC.</p>
+</section>
+
+<section class="flow">
+  <h2><span class="n">7</span>Resultados</h2>
+  <h3>7.1 Pruebas realizadas</h3>
+  <table>
+    <tr><th>Prueba</th><th>Método</th><th>Resultado</th></tr>
+    <tr><td>Interfaz completa</td><td>7 recorridos automáticos con un navegador controlado por código (Playwright), en celular y computadora, modo claro y oscuro</td><td>Sin errores de página en todos los recorridos</td></tr>
+    <tr><td>Tiempo de respuesta del servidor</td><td>225 registros con credencial firmada, medidos de extremo a extremo por HTTP en la misma máquina</td><td>Promedio 2,7 ms; percentil 95: 5,2 ms; máximo 19,7 ms</td></tr>
+    <tr><td>Credencial falsificada</td><td>Credencial con firma inventada para un estudiante real</td><td>Rechazada: "La firma de la credencial no es válida"</td></tr>
+    <tr><td>Credencial copiada a otra tarjeta</td><td>Credencial válida presentada con el UID de otro estudiante</td><td>Rechazada: "La credencial fue copiada de otra tarjeta"</td></tr>
+    <tr><td>Copia del número de tarjeta</td><td>Registro de una tarjeta NTAG con el UID correcto pero sin credencial</td><td>Registro marcado para revisión con el motivo</td></tr>
+    <tr><td>PIN del estudiante</td><td>PIN incorrecto en un celular nuevo</td><td>Rechazado; bloqueo de 10 min tras 5 intentos</td></tr>
+    <tr><td>Decodificador NDEF del firmware</td><td>Compilación del código C++ del lector en la PC con un mensaje NDEF real (enlace + texto, 92 bytes)</td><td>Credencial extraída correctamente, también con bloques TLV adicionales</td></tr>
+    <tr><td>Correo</td><td>Servidor de correo de prueba local; contraseña incorrecta y correcta</td><td>Mensajes de error claros; correo recibido con copia al DECE</td></tr>
+    <tr><td>APK de Android</td><td>Verificación independiente de la firma (apksigtool) y análisis del archivo (androguard)</td><td>Firma APK v2 válida; paquete <code>ec.navi.app</code>, 594 KB</td></tr>
+    <tr><td>Pase de lista</td><td>Confirmación de un curso de 6 estudiantes por la API</td><td>3 ms en el servidor</td></tr>
+  </table>
+  <div class="kpis">
+    <div class="kpi"><b>2,7 ms</b><small>Tiempo promedio del servidor por registro</small></div>
+    <div class="kpi"><b>92 bytes</b><small>Enlace + credencial; caben en una NTAG213 (144 bytes)</small></div>
+    <div class="kpi"><b>40</b><small>Mascotas distintas, una por estudiante de cada curso</small></div>
+    <div class="kpi"><b>594 KB</b><small>Tamaño del APK con la versión de prueba incluida</small></div>
+  </div>
+  <h3>7.2 Mediciones en el aula</h3>
+  <p class="fill">Completar con las mediciones del prototipo armado. Son el dato más valioso del reporte porque son propias y verificables.</p>
+  <table>
+    <tr><th>Medición</th><th>Cómo medir</th><th class="num">Resultado</th></tr>
+    <tr><td>Tiempo del pase de lista manual</td><td>Cronómetro en 5 clases reales</td><td class="num fill">[ ] s</td></tr>
+    <tr><td>Tiempo con N.A.V.I (fila + confirmación del docente)</td><td>Cronómetro en las mismas clases</td><td class="num fill">[ ] s</td></tr>
+    <tr><td>Tiempo por estudiante en el lector</td><td>Del toque al LED, promedio de 30 toques</td><td class="num fill">[ ] s</td></tr>
+    <tr><td>Lecturas fallidas</td><td>Toques sin lectura / toques totales</td><td class="num fill">[ ] %</td></tr>
+    <tr><td>Consumo del lector</td><td>Multímetro USB durante 1 hora</td><td class="num fill">[ ] mA · [ ] Wh/día</td></tr>
+    <tr><td>Tiempo hasta el aviso al representante</td><td>Desde el límite de ausencia hasta que llega el correo</td><td class="num fill">[ ] s</td></tr>
+  </table>
+</section>
+
+<section class="flow">
+  <h2><span class="n">8</span>Impacto tecnológico, social y ambiental</h2>
+  <h3>8.1 Impacto tecnológico</h3>
+  <ul>
+    <li>Integra hardware Arduino de bajo costo con un servidor, una aplicación instalable y una aplicación Android, todo funcionando en la red local.</li>
+    <li>Usa la misma tarjeta para tres funciones: asistencia, ficha médica de emergencia e inicio de sesión del estudiante.</li>
+    <li>Aplica criptografía estándar (HMAC-SHA256) para que una copia del número de la tarjeta sea detectable, y deja una ruta clara hacia tarjetas NTAG 424 DNA.</li>
+  </ul>
+  <h3>8.2 Impacto social</h3>
+  <ul>
+    <li><b>Familias:</b> se enteran el mismo día de un atraso o una ausencia, como pide el artículo 170 del Reglamento a la LOEI. La evidencia muestra que estos avisos mejoran la asistencia (Bergman y Chan, 2021).</li>
+    <li><b>Docentes:</b> recuperan minutos de clase y reciben evidencia cuando hay una duda, sin acusar a nadie de forma automática.</li>
+    <li><b>Estudiantes:</b> la ficha médica puede orientar a quien los ayude en una emergencia (alergias graves, asma, diabetes) y su mascota convierte la puntualidad en algo positivo, privado y cooperativo.</li>
+    <li><b>Privacidad:</b> no usa biometría, guarda solo lo necesario, pide el consentimiento del representante para la ficha médica y borra las fotos a los 7 días.</li>
+    <li><b>Inclusión:</b> funciona con cualquier celular para la ficha médica y no exige que los estudiantes tengan celular para registrar su asistencia.</li>
+  </ul>
+  <h3>8.3 Impacto ambiental</h3>
+  <ul>
+    <li><b>Papel:</b> elimina las hojas de registro diarias y las citaciones impresas por faltas. Estimación propia: con una hoja por curso al día, un colegio de 30 cursos usa unas 6.000 hojas al año solo en listas (30 × 200 días).</li>
+    <li><b>Energía:</b> según la hoja de datos de Espressif, el ESP32 consume unos 240 mA al transmitir por WiFi y 10 µA en sueño profundo. Un lector activo usa menos de 1 W, frente a decenas de vatios de una computadora dedicada. Fuera del horario de clases puede dormir. <span class="fill">[Confirmar con la medición del capítulo 7.2.]</span></li>
+    <li><b>Reutilización:</b> las tarjetas NTAG soportan al menos 100.000 escrituras y conservan los datos 10 años (NXP Semiconductors, 2015), así que se reasignan cuando un estudiante se gradúa. Si se pierde una, basta con emitir una nueva credencial.</li>
+    <li><b>Residuos electrónicos:</b> en 2022 se generaron 62 millones de toneladas de residuos electrónicos en el mundo y solo el 22,3 % se recicló formalmente (Baldé et al., 2024). El terminal usa módulos estándar y reemplazables, con carcasa atornillada para repararlo en lugar de desecharlo.</li>
+  </ul>
+</section>
+
+<section class="flow">
+  <h2><span class="n">9</span>Conclusiones y recomendaciones</h2>
+  <h3>Conclusiones</h3>
+  <ul>
+    <li>Se construyó un sistema funcional que registra la asistencia con tarjetas NFC, clasifica cada registro según el horario del curso y avisa a los representantes de forma automática.</li>
+    <li>El servidor responde en milisegundos, por lo que el tiempo por estudiante lo determina el lector y la red, no el procesamiento.</li>
+    <li>La suplantación no se elimina, pero se vuelve detectable: el pase de lista por excepción, la cámara, el sensor de presencia y la credencial firmada producen evidencia para que el docente decida.</li>
+    <li>Una sola tarjeta barata sirve para asistencia, emergencia médica e inicio de sesión, respetando la LOPDP al no usar datos biométricos.</li>
+  </ul>
+  <h3>Limitaciones</h3>
+  <ul>
+    <li>La credencial de una NTAG213 es estática: una persona con equipo especializado puede copiar la tarjeta completa a un chip que imite su UID. Por eso la revisión del docente sigue siendo la capa principal y se recomienda NTAG 424 DNA para una versión real.</li>
+    <li>El firmware se programó contra la documentación de las librerías y su decodificador NDEF se probó en la PC; la prueba final es en el prototipo físico.</li>
+    <li>La aplicación Android se compiló y su firma se verificó, pero debe probarse en varios modelos de celular.</li>
+    <li>La ficha médica muestra lo que el representante autorizó; no reemplaza la atención médica profesional.</li>
+  </ul>
+  <h3>Recomendaciones y trabajo futuro</h3>
+  <ul>
+    <li>Migrar a tarjetas NTAG 424 DNA, cuyo código cambia en cada toque.</li>
+    <li>Publicar el servidor con HTTPS y dominio propio para que la ficha médica abra desde datos móviles.</li>
+    <li>Exportar la asistencia en el formato de Educar Ecuador.</li>
+    <li>Hacer un piloto de un mes en un curso, con encuestas a docentes y familias.</li>
+    <li>Diseñar una carcasa impresa en 3D con el lector a la altura del pecho.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">10</span>Anexos</h2>
+  <h3>Anexo A. Fotografías del prototipo</h3>
+  <div class="two">
+    <div class="photo-slot">[Foto del lector armado: ESP32, PN532, OLED, LEDs]</div>
+    <div class="photo-slot">[Foto del proceso de montaje o de la carcasa]</div>
+  </div>
+  <h3>Anexo B. Capturas de la aplicación</h3>
+  <figure><img src="img/panel.jpg" alt="Panel del docente"><figcaption>Figura 2. Panel del docente en la computadora: anillos de asistencia, cursos, registros en vivo y avisos.</figcaption></figure>
+  <figure class="phones">
+    <div><img src="img/lista.jpg" alt="Pase de lista"><figcaption>Figura 3. Pase de lista por excepción con las mascotas.</figcaption></div>
+    <div><img src="img/revision.jpg" alt="Revisión"><figcaption>Figura 4. Revisión de una tarjeta sin firma válida.</figcaption></div>
+    <div><img src="img/credencial.jpg" alt="Credencial"><figcaption>Figura 5. Grabación de la credencial cifrada.</figcaption></div>
+  </figure>
+  <figure class="phones">
+    <div><img src="img/pin.jpg" alt="PIN"><figcaption>Figura 6. Primer ingreso del estudiante con su tarjeta: creación del PIN.</figcaption></div>
+    <div><img src="img/nacimiento.jpg" alt="Nacimiento"><figcaption>Figura 7. Nace la mascota única del estudiante.</figcaption></div>
+    <div><img src="img/estudiante.jpg" alt="Portal"><figcaption>Figura 8. Portal del estudiante.</figcaption></div>
+  </figure>
+  <figure><img src="img/mascotas.jpg" alt="Mascotas"><figcaption>Figura 9. Las 40 mascotas: 40 formas y combinaciones de colores distintas.</figcaption></figure>
+  <figure class="phones">
+    <div><img src="img/ficha.jpg" alt="Ficha"><figcaption>Figura 10. Ficha de emergencia que ve quien acerca un celular a la tarjeta.</figcaption></div>
+    <div><img src="img/correo.jpg" alt="Correo"><figcaption>Figura 11. Aviso de ausencia por correo con copia al DECE.</figcaption></div>
+    <div><img src="img/whatsapp.jpg" alt="WhatsApp"><figcaption>Figura 12. Avisos por WhatsApp listos para enviar.</figcaption></div>
+  </figure>
+  <h3>Anexo C. Señales del lector</h3>
+  <table>
+    <tr><th>LED y sonido</th><th>Pantalla</th><th>Significado</th></tr>
+    <tr><td>Verde, tono agudo</td><td>HOLA MATEO · A TIEMPO</td><td>Registro puntual</td></tr>
+    <tr><td>Amarillo, tono medio</td><td>HOLA MATEO · ATRASO</td><td>Registro con atraso</td></tr>
+    <tr><td>Amarillo</td><td>REGISTRO EN REVISION</td><td>El docente debe revisarlo</td></tr>
+    <tr><td>Amarillo</td><td>GUARDADO · SIN RED</td><td>Sin WiFi; se enviará después</td></tr>
+    <tr><td>Rojo, tono grave</td><td>TARJETA NO REGISTRADA</td><td>Tarjeta desconocida</td></tr>
+  </table>
+  <h3>Anexo D. Código fuente</h3>
+  <p>El código completo está en la carpeta del proyecto: <code>firmware/navi_esp32_pn532</code> (lector), <code>firmware/navi_esp32_cam</code> (cámara), <code>backend</code> (servidor y aplicación web) y <code>android</code> (aplicación Android). <span class="fill">[Agregar capturas del código abierto en Arduino IDE y del monitor serie.]</span></p>
+</section>
+
+<section class="refs">
+  <h2><span class="n">11</span>Referencias bibliográficas</h2>
+  <p>Android Developers. (s. f.). <i>Network security configuration</i>. Google. https://developer.android.com/privacy-and-security/security-config</p>
+  <p>Baldé, C. P., Kuehr, R., Yamamoto, T., McDonald, R., D'Angelo, E., Althaf, S., Bel, G., Deubzer, O., Fernandez-Cubillo, E., Forti, V., Gray, V., Herat, S., Honda, S., Iattoni, G., Khetriwal, D. S., Luda di Cortemiglia, V., Lobuntsova, Y., Nnorom, I., Pralat, N., y Wagner, M. (2024). <i>The global e-waste monitor 2024</i>. International Telecommunication Union y United Nations Institute for Training and Research. https://ewastemonitor.info/</p>
+  <p>Bergman, P., y Chan, E. W. (2021). Leveraging parents through low-cost technology: The impact of high-frequency information on student achievement. <i>Journal of Human Resources, 56</i>(1), 125–158. https://doi.org/10.3368/jhr.56.1.1118-9837R1</p>
+  <p>Berlinski, S., Busso, M., Dinkelman, T., y Martínez A., C. (2021). <i>Reducing parent-school information gaps and improving education outcomes: Evidence from high frequency text messaging</i> (NBER Working Paper n.º 28581). National Bureau of Economic Research. https://doi.org/10.3386/w28581</p>
+  <p>Chen, Z.-H., Liao, C. C. Y., Chien, T.-C., y Chan, T.-W. (2011). Animal companions: Fostering children's effort-making by nurturing virtual pets. <i>British Journal of Educational Technology, 42</i>(1), 147–166. https://doi.org/10.1111/j.1467-8535.2009.01003.x</p>
+  <p>Ege, F., y Özdemir, M. (2026). <i>RFID-based non-biometric classroom attendance system: Proxy attendance detection via weight sensor integration</i> [Preprint]. arXiv. https://arxiv.org/abs/2604.22697</p>
+  <p>Espressif Systems. (2025). <i>ESP32 series datasheet</i> (versión 5.3). https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf</p>
+  <p>Garcia, F. D., de Koning Gans, G., Muijrers, R., van Rossum, P., Verdult, R., Wichers Schreur, R., y Jacobs, B. (2008). Dismantling MIFARE Classic. En S. Jajodia y J. Lopez (Eds.), <i>Computer Security – ESORICS 2008</i> (pp. 97–114). Springer. https://doi.org/10.1007/978-3-540-88313-5_7</p>
+  <p>Google Chrome Developers. (2021). <i>Interact with NFC devices on Chrome for Android</i>. https://developer.chrome.com/docs/capabilities/nfc</p>
+  <p>Krawczyk, H., Bellare, M., y Canetti, R. (1997). <i>HMAC: Keyed-hashing for message authentication</i> (RFC 2104). Internet Engineering Task Force. https://doi.org/10.17487/RFC2104</p>
+  <p>Ley Orgánica de Protección de Datos Personales. (2021, 26 de mayo). Registro Oficial Suplemento 459.</p>
+  <p>Lupa Media. (2024). <i>Cifras del abandono escolar en Ecuador</i>. https://lupa.com.ec/explicativos/cifras-abandono-escolar-ecuador/</p>
+  <p>Manolev, J., Sullivan, A., y Slee, R. (2019). The datafication of discipline: ClassDojo, surveillance and a performative classroom culture. <i>Learning, Media and Technology, 44</i>(1), 36–51. https://doi.org/10.1080/17439884.2018.1558237</p>
+  <p>Ministerio de Educación del Ecuador. (2017). <i>Reglamento General a la Ley Orgánica de Educación Intercultural</i>. https://educacion.gob.ec/wp-content/uploads/downloads/2017/05/Reglamento-General-Ley-Organica-Educacion-Intercultural.pdf</p>
+  <p>Ministerio de Educación del Ecuador. (2024). <i>Plan nacional "Cuidemos de ti"</i>. https://educacion.gob.ec/wp-content/uploads/downloads/2024/10/Plan-nacional-cuidemos-de-ti.pdf</p>
+  <p>NXP Semiconductors. (2015). <i>NTAG213/215/216: NFC Forum Type 2 Tag compliant IC with 144/504/888 bytes user memory</i> [Hoja de datos]. https://www.nxp.com/docs/en/data-sheet/NTAG213_215_216.pdf</p>
+  <p>NXP Semiconductors. (2019). <i>NTAG 424 DNA – NT4H2421Gx</i> [Hoja de datos]. https://www.nxp.com/docs/en/data-sheet/NT4H2421Gx.pdf</p>
+  <p>Presidencia de la República del Ecuador. (2023). <i>Reglamento General a la Ley Orgánica de Protección de Datos Personales</i>. https://www.cosede.gob.ec/wp-content/uploads/2023/12/REGLAMENTO-GENERAL-A-LA-LEY-ORG%C3%81NICA-DE-PROTECCION-DE-DATOS-PERSONALES_compressed-1.pdf</p>
+  <p>Rogers, T., y Feller, A. (2018). Reducing student absences at scale by targeting parents' misbeliefs. <i>Nature Human Behaviour, 2</i>(5), 335–342. https://doi.org/10.1038/s41562-018-0328-1</p>
+  <p>Sailer, M., y Homner, L. (2020). The gamification of learning: A meta-analysis. <i>Educational Psychology Review, 32</i>(1), 77–112. https://doi.org/10.1007/s10648-019-09498-w</p>
+  <p>Turpo Benique, C. O. (2025). <i>Sistema de control de asistencia escolar basado en tecnología RFID con Raspberry Pi y Arduino: EDURFID</i> [Preprint]. arXiv. https://arxiv.org/abs/2507.14191</p>
+  <h3>Software y librerías de terceros</h3>
+  <p>Adafruit Industries. <i>Adafruit PN532</i>, <i>Adafruit SSD1306</i>, <i>Adafruit GFX</i> y <i>Adafruit VL53L0X</i> [Librerías para Arduino]. https://github.com/adafruit</p>
+  <p>Blanchon, B. <i>ArduinoJson</i> (versión 7) [Librería para Arduino]. https://arduinojson.org</p>
+  <p>Espressif Systems. <i>Arduino core for the ESP32</i> (versión 3.x). https://github.com/espressif/arduino-esp32</p>
+  <p>Kazuhiko Arase. <i>QR Code Generator</i> (versión 1.4.4, licencia MIT). https://github.com/kazuhikoarase/qrcode-generator</p>
+  <p>OpenJS Foundation y colaboradores. <i>Node.js</i>, <i>Express</i>, <i>better-sqlite3</i>, <i>ws</i> y <i>Nodemailer</i>. https://nodejs.org</p>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,761 @@
+const express = require('express');
+const http = require('http');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const { WebSocketServer } = require('ws');
+const config = require('./config');
+const { db, getSettings, setSetting, nextMascot } = require('./database');
+const auth = require('./auth');
+const notifier = require('./notifier');
+const A = require('./attendance');
+const T = require('./time');
+const H = require('./health');
+const ST = require('./student');
+const C = require('./credential');
+
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ noServer: true });
+
+app.disable('x-powered-by');
+app.use(express.json({ limit: '3mb' }));
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:; frame-ancestors 'none'");
+  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
+const PUBLIC = path.join(__dirname, 'public');
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(PUBLIC, 'sw.js'));
+});
+app.use(express.static(PUBLIC, { maxAge: 0, etag: true }));
+
+function broadcast(type, payload) {
+  const msg = JSON.stringify({ type, payload, at: new Date().toISOString() });
+  for (const client of wss.clients) {
+    if (client.readyState === 1) client.send(msg);
+  }
+}
+A.setBroadcast(broadcast);
+notifier.setListener(n => broadcast('notification', n), u => broadcast('notification_update', u));
+
+const wrap = fn => (req, res) => {
+  try {
+    const out = fn(req, res);
+    if (out && typeof out.catch === 'function') out.catch(e => fail(res, e));
+  } catch (e) {
+    fail(res, e);
+  }
+};
+
+function fail(res, e) {
+  console.error(e);
+  if (res.headersSent) return;
+  const msg = String(e.message || e);
+  if (msg.includes('UNIQUE') && msg.includes('nfc_uid')) return res.status(409).json({ error: 'Esa tarjeta ya está asignada a otro estudiante' });
+  if (msg.includes('UNIQUE') && msg.includes('student_code')) return res.status(409).json({ error: 'Ese código de estudiante ya existe' });
+  if (msg.includes('UNIQUE') && msg.includes('code')) return res.status(409).json({ error: 'Ese código de curso ya existe' });
+  res.status(500).json({ error: 'Error interno del servidor' });
+}
+
+const loginAttempts = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, list] of loginAttempts) if (!list.some(t => now - t < 5 * 60000)) loginAttempts.delete(ip);
+}, 10 * 60000).unref();
+function tooManyAttempts(ip) {
+  const now = Date.now();
+  const list = (loginAttempts.get(ip) || []).filter(t => now - t < 5 * 60000);
+  loginAttempts.set(ip, list);
+  return list.length >= 12;
+}
+function noteAttempt(ip) {
+  const list = loginAttempts.get(ip) || [];
+  list.push(Date.now());
+  loginAttempts.set(ip, list);
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const AVATARS = ['pebble', 'triangle', 'cloud', 'circle', 'capsule', 'clover'];
+
+function issue(res, userId, status = 200) {
+  const user = db.q(auth.publicUserSql).get(userId);
+  res.status(status).json({ user, token: auth.createToken(userId) });
+}
+
+app.post('/api/auth/register', wrap((req, res) => {
+  const { name, email, password, institution_name, avatar } = req.body || {};
+  const fields = [];
+  if (!name || !String(name).trim()) fields.push('name');
+  if (!email || !String(email).trim()) fields.push('email');
+  if (!password) fields.push('password');
+  if (fields.length) return res.status(400).json({ error: 'Completa los campos marcados', code: 'EMPTY', fields });
+  const cleanEmail = String(email).toLowerCase().trim();
+  if (!EMAIL_RE.test(cleanEmail)) return res.status(400).json({ error: 'Ese correo no parece válido', code: 'BAD_EMAIL', fields: ['email'] });
+  if (String(password).length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres', code: 'SHORT_PASSWORD', fields: ['password'] });
+  if (db.q('SELECT 1 FROM users WHERE email = ?').get(cleanEmail)) return res.status(409).json({ error: 'Ese correo ya tiene una cuenta', code: 'EMAIL_TAKEN', fields: ['email'] });
+  const realUsers = db.q("SELECT COUNT(*) AS c FROM users WHERE email != 'demo@navi.local'").get().c;
+  const role = realUsers === 0 ? 'ADMINISTRADOR' : 'DOCENTE';
+  const id = db.q('INSERT INTO users (name, email, password_hash, role, institution_name, avatar) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(String(name).trim().slice(0, 80), cleanEmail, auth.hashPassword(String(password)), role, String(institution_name || config.institutionName).trim().slice(0, 100), AVATARS.includes(avatar) ? avatar : 'triangle').lastInsertRowid;
+  issue(res, id, 201);
+}));
+
+app.post('/api/auth/login', wrap((req, res) => {
+  const ip = req.socket.remoteAddress;
+  if (tooManyAttempts(ip)) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos.', code: 'LOCKED' });
+  const { email, password } = req.body || {};
+  const fields = [];
+  if (!email || !String(email).trim()) fields.push('email');
+  if (!password) fields.push('password');
+  if (fields.length) return res.status(400).json({ error: fields.length === 2 ? 'Escribe tu correo y contraseña' : fields[0] === 'email' ? 'Te faltó tu correo' : 'Te faltó tu contraseña', code: 'EMPTY', fields });
+  const cleanEmail = String(email).toLowerCase().trim();
+  if (!EMAIL_RE.test(cleanEmail)) return res.status(400).json({ error: 'Ese correo no parece válido', code: 'BAD_EMAIL', fields: ['email'] });
+  const user = db.q('SELECT * FROM users WHERE email = ?').get(cleanEmail);
+  if (!user) {
+    noteAttempt(ip);
+    return res.status(404).json({ error: 'No encuentro una cuenta con ese correo', code: 'NO_USER', fields: ['email'] });
+  }
+  if (!auth.verifyPassword(String(password), user.password_hash)) {
+    noteAttempt(ip);
+    return res.status(401).json({ error: 'Contraseña incorrecta', code: 'BAD_PASSWORD', fields: ['password'] });
+  }
+  issue(res, user.id);
+}));
+
+app.post('/api/auth/demo', wrap((req, res) => {
+  if (!config.demoMode) return res.status(403).json({ error: 'El modo demostración está desactivado' });
+  let user = db.q("SELECT id FROM users WHERE email = 'demo@navi.local'").get();
+  if (!user) {
+    const id = db.q('INSERT INTO users (name, email, password_hash, role, institution_name, avatar) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('Docente Demo', 'demo@navi.local', auth.hashPassword(require('crypto').randomBytes(16).toString('hex')), 'DOCENTE', config.institutionName, 'capsule').lastInsertRowid;
+    user = { id };
+  }
+  issue(res, user.id);
+}));
+
+app.get('/api/auth/me', auth.requireUser, (req, res) => res.json({ user: req.user }));
+
+app.patch('/api/auth/me', auth.requireUser, wrap((req, res) => {
+  const { name, institution_name, avatar } = req.body || {};
+  db.q('UPDATE users SET name = COALESCE(?, name), institution_name = COALESCE(?, institution_name), avatar = COALESCE(?, avatar) WHERE id = ?')
+    .run(name ? String(name).trim().slice(0, 80) : null, institution_name ? String(institution_name).trim().slice(0, 100) : null, AVATARS.includes(avatar) ? avatar : null, req.user.id);
+  res.json({ user: db.q(auth.publicUserSql).get(req.user.id) });
+}));
+
+app.post('/api/auth/password', auth.requireUser, wrap((req, res) => {
+  const { current, next } = req.body || {};
+  const row = db.q('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+  if (!auth.verifyPassword(String(current || ''), row.password_hash)) return res.status(401).json({ error: 'La contraseña actual no coincide', code: 'BAD_PASSWORD' });
+  if (!next || String(next).length < 6) return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres', code: 'SHORT_PASSWORD' });
+  db.q('UPDATE users SET password_hash = ? WHERE id = ?').run(auth.hashPassword(String(next)), req.user.id);
+  res.json({ ok: true });
+}));
+
+app.get('/api/users', auth.requireAdmin, (req, res) => {
+  res.json(db.q("SELECT id, name, email, role, avatar, created_at FROM users WHERE email != 'demo@navi.local' ORDER BY id").all());
+});
+
+app.patch('/api/users/:id', auth.requireAdmin, wrap((req, res) => {
+  const role = req.body && req.body.role;
+  if (!['ADMINISTRADOR', 'DOCENTE', 'INSPECTOR'].includes(role)) return res.status(400).json({ error: 'Rol no válido' });
+  const id = Number(req.params.id);
+  if (id === req.user.id && role !== 'ADMINISTRADOR') return res.status(400).json({ error: 'No puedes quitarte tu propio rol de administrador' });
+  db.q('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+  res.json({ ok: true });
+}));
+
+app.get('/api/status', auth.requireUser, (req, res) => {
+  const date = req.query.date || T.localDate();
+  res.json({
+    date,
+    server_time: new Date().toISOString(),
+    stats: A.stats(date),
+    channels: notifier.status(),
+    demo_mode: config.demoMode,
+    public_url: config.publicUrl || null,
+    settings: getSettings()
+  });
+});
+
+app.get('/api/settings', auth.requireUser, (req, res) => res.json(getSettings()));
+
+app.patch('/api/settings', auth.requireUser, wrap((req, res) => {
+  if (req.user.role !== 'ADMINISTRADOR' && !config.demoMode) return res.status(403).json({ error: 'Solo un administrador puede hacer esto.' });
+  const allowed = ['notify_on_arrival', 'notify_on_late', 'notify_on_absent', 'auto_absences'];
+  for (const k of allowed) if (typeof req.body[k] === 'boolean') setSetting(k, req.body[k]);
+  res.json(getSettings());
+}));
+
+const canConfigure = req => req.user.role === 'ADMINISTRADOR' || config.demoMode;
+
+app.get('/api/messaging', auth.requireUser, (req, res) => {
+  if (!canConfigure(req)) return res.status(403).json({ error: 'Solo un administrador puede ver esto.' });
+  res.json({ config: notifier.publicConfig(), status: notifier.status() });
+});
+
+app.put('/api/messaging', auth.requireUser, wrap(async (req, res) => {
+  if (!canConfigure(req)) return res.status(403).json({ error: 'Solo un administrador puede hacer esto.' });
+  let cfg;
+  try {
+    cfg = notifier.saveConfig(req.body || {});
+  } catch (e) {
+    return res.status(400).json({ error: e.message, fields: e.fields });
+  }
+  const b = req.body || {};
+  const mailTouched = ['mail_provider', 'mail_host', 'mail_port', 'mail_user', 'mail_pass'].some(k => b[k] !== undefined);
+  const verify = mailTouched && cfg.mail_source === 'app' ? await notifier.verifyMail() : null;
+  broadcast('channels', notifier.status());
+  res.json({ config: cfg, status: notifier.status(), verify });
+}));
+
+app.post('/api/messaging/test', auth.requireUser, wrap(async (req, res) => {
+  if (!canConfigure(req)) return res.status(403).json({ error: 'Solo un administrador puede hacer esto.' });
+  const b = req.body || {};
+  const out = b.channel === 'whatsapp' ? await notifier.testWhatsapp(b.to) : await notifier.testEmail(b.to, b.kind);
+  res.status(out.ok ? 200 : 400).json(out.ok ? out : { ...out, error: out.error });
+}));
+
+app.get('/api/terminal/key', auth.requireAdmin, (req, res) => res.json({ key: config.terminalKey }));
+
+app.get('/api/courses', auth.requireUser, (req, res) => {
+  const date = req.query.date || T.localDate();
+  const courses = db.q('SELECT * FROM courses ORDER BY id').all();
+  const totals = db.q('SELECT course_id, COUNT(*) AS c FROM students WHERE active = 1 GROUP BY course_id').all();
+  const att = db.q('SELECT course_id, status, COUNT(*) AS c FROM attendances WHERE date = ? GROUP BY course_id, status').all(date);
+  const tmap = Object.fromEntries(totals.map(t => [t.course_id, t.c]));
+  res.json(courses.map(c => {
+    const rows = att.filter(a => a.course_id === c.id);
+    const get = s => (rows.find(r => r.status === s) || { c: 0 }).c;
+    const present = get('A_TIEMPO') + get('TARDE');
+    const total = tmap[c.id] || 0;
+    return { ...c, total_students: total, present, late: get('TARDE'), absent: get('AUSENTE'), percentage: total ? Math.round((present / total) * 100) : 0 };
+  }));
+});
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+function courseInput(b) {
+  const out = {};
+  if (b.name !== undefined) out.name = String(b.name).trim().slice(0, 100);
+  if (b.code !== undefined) out.code = String(b.code).trim().toUpperCase().slice(0, 20);
+  if (b.teacher !== undefined) out.teacher = String(b.teacher).trim().slice(0, 80);
+  if (b.classroom !== undefined) out.classroom = String(b.classroom).trim().slice(0, 80);
+  if (b.schedule_start !== undefined) {
+    if (!TIME_RE.test(b.schedule_start)) throw Object.assign(new Error('Hora de entrada no válida (usa HH:MM)'), { http: 400 });
+    out.schedule_start = b.schedule_start;
+  }
+  if (b.late_tolerance_min !== undefined) out.late_tolerance_min = Math.max(0, Math.min(120, parseInt(b.late_tolerance_min, 10) || 0));
+  if (b.absent_limit_min !== undefined) out.absent_limit_min = Math.max(5, Math.min(480, parseInt(b.absent_limit_min, 10) || 45));
+  if (b.days !== undefined) out.days = String(b.days).split(',').map(Number).filter(n => n >= 1 && n <= 7).join(',') || '1,2,3,4,5';
+  if (b.theme !== undefined) out.theme = ['blue', 'green', 'orange', 'purple', 'pink', 'teal'].includes(b.theme) ? b.theme : 'blue';
+  return out;
+}
+
+app.post('/api/courses', auth.requireAdmin, wrap((req, res) => {
+  let data;
+  try {
+    data = courseInput(req.body || {});
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  if (!data.name || !data.code) return res.status(400).json({ error: 'Nombre y código del curso son obligatorios' });
+  const cols = Object.keys(data);
+  const id = db.q(`INSERT INTO courses (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => data[c])).lastInsertRowid;
+  res.status(201).json(db.q('SELECT * FROM courses WHERE id = ?').get(id));
+}));
+
+app.patch('/api/courses/:id', auth.requireUser, wrap((req, res) => {
+  let data;
+  try {
+    data = courseInput(req.body || {});
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  const cols = Object.keys(data);
+  if (cols.length) db.q(`UPDATE courses SET ${cols.map(c => `${c} = ?`).join(', ')} WHERE id = ?`).run(...cols.map(c => data[c]), req.params.id);
+  const course = db.q('SELECT * FROM courses WHERE id = ?').get(req.params.id);
+  if (data.schedule_start || data.absent_limit_min || data.days) {
+    const today = T.localDate();
+    db.q('DELETE FROM course_runs WHERE course_id = ? AND date = ?').run(req.params.id, today);
+    db.q("DELETE FROM attendances WHERE course_id = ? AND date = ? AND status = 'AUSENTE' AND source = 'AUTO'").run(req.params.id, today);
+  }
+  broadcast('courses', {});
+  res.json(course);
+}));
+
+app.delete('/api/courses/:id', auth.requireAdmin, wrap((req, res) => {
+  const n = db.q('SELECT COUNT(*) AS c FROM students WHERE course_id = ? AND active = 1').get(req.params.id).c;
+  if (n > 0) return res.status(409).json({ error: 'Primero mueve o desactiva a los estudiantes de este curso' });
+  db.q('DELETE FROM course_runs WHERE course_id = ?').run(req.params.id);
+  db.q('DELETE FROM courses WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+}));
+
+const studentSelect = `SELECT s.id, s.student_code, s.first_name, s.last_name, s.course_id, s.nfc_uid, s.parent_name, s.parent_phone, s.parent_email, s.mascot, s.mascot_name, s.card_ver, CASE WHEN s.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
+  CASE WHEN s.parent_telegram IS NULL THEN 0 ELSE 1 END AS telegram_linked, s.face_photo, s.active, s.created_at, c.name AS course_name, c.code AS course_code,
+  CASE WHEN h.allergies IS NOT NULL AND h.allergies != '[]' THEN 1 ELSE 0 END AS has_allergy,
+  CASE WHEN h.conditions IS NOT NULL AND h.conditions != '[]' THEN 1 ELSE 0 END AS has_condition,
+  CASE WHEN h.allergies LIKE '%GRAVE%' THEN 1 ELSE 0 END AS severe_allergy,
+  CASE WHEN h.student_id IS NULL THEN 0 ELSE 1 END AS has_health,
+  COALESCE(h.consent, 0) AS health_public
+  FROM students s JOIN courses c ON c.id = s.course_id LEFT JOIN student_health h ON h.student_id = s.id`;
+
+function saveFace(studentId, dataUrl) {
+  if (dataUrl === null) {
+    try {
+      fs.unlinkSync(path.join(A.FACE_DIR, `${studentId}.jpg`));
+    } catch (e) {}
+    db.q('UPDATE students SET face_photo = NULL WHERE id = ?').run(studentId);
+    return;
+  }
+  const m = /^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/.exec(dataUrl || '');
+  if (!m) return;
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 2 * 1024 * 1024) return;
+  fs.writeFileSync(path.join(A.FACE_DIR, `${studentId}.jpg`), buf);
+  db.q('UPDATE students SET face_photo = ? WHERE id = ?').run(String(Date.now()), studentId);
+}
+
+function studentInput(b) {
+  const out = {};
+  const str = (v, n) => (v === undefined ? undefined : v === null ? null : String(v).trim().slice(0, n) || null);
+  if (b.first_name !== undefined) out.first_name = str(b.first_name, 60);
+  if (b.last_name !== undefined) out.last_name = str(b.last_name, 60);
+  if (b.course_id !== undefined) out.course_id = Number(b.course_id);
+  if (b.nfc_uid !== undefined) out.nfc_uid = String(b.nfc_uid || '').toUpperCase().replace(/[^0-9A-F]/g, '') || null;
+  if (b.parent_name !== undefined) out.parent_name = str(b.parent_name, 80);
+  if (b.parent_phone !== undefined) out.parent_phone = str(b.parent_phone, 30);
+  if (b.parent_email !== undefined) out.parent_email = str(b.parent_email, 200);
+  if (b.student_code !== undefined) out.student_code = str(b.student_code, 20);
+  return out;
+}
+
+function contactError(d) {
+  if (d.parent_email) {
+    if (!notifier.validEmails(d.parent_email)) return { error: 'El correo del representante no es válido. Si son dos, sepáralos con una coma.', fields: ['parent_email'] };
+    d.parent_email = notifier.splitEmails(d.parent_email).join(', ');
+  }
+  if (d.parent_phone && !notifier.normalizePhone(d.parent_phone)) return { error: 'El celular no parece válido. Usa 09XXXXXXXX o +593 9X XXX XXXX', fields: ['parent_phone'] };
+  return null;
+}
+
+app.get('/api/students', auth.requireUser, (req, res) => {
+  res.json(db.q(`${studentSelect} WHERE s.active = 1 ORDER BY s.last_name, s.first_name`).all());
+});
+
+app.post('/api/students', auth.requireUser, wrap((req, res) => {
+  const d = studentInput(req.body || {});
+  const fields = [];
+  if (!d.first_name) fields.push('first_name');
+  if (!d.last_name) fields.push('last_name');
+  if (!d.course_id) fields.push('course_id');
+  if (!d.nfc_uid) fields.push('nfc_uid');
+  if (fields.length) return res.status(400).json({ error: 'Faltan datos obligatorios', fields });
+  if (d.nfc_uid.length < 8 || d.nfc_uid.length > 20) return res.status(400).json({ error: 'El UID debe tener entre 8 y 20 caracteres hexadecimales', fields: ['nfc_uid'] });
+  const bad = contactError(d);
+  if (bad) return res.status(400).json(bad);
+  if (!db.q('SELECT 1 FROM courses WHERE id = ?').get(d.course_id)) return res.status(400).json({ error: 'Curso no válido', fields: ['course_id'] });
+  const inactive = db.q('SELECT id FROM students WHERE nfc_uid = ? AND active = 0').get(d.nfc_uid);
+  if (inactive) db.q("UPDATE students SET nfc_uid = nfc_uid || '-OLD' || id WHERE id = ?").run(inactive.id);
+  if (!d.student_code) {
+    const n = db.q('SELECT COUNT(*) AS c FROM students').get().c + 1;
+    d.student_code = `NAVI-${String(n).padStart(3, '0')}`;
+    while (db.q('SELECT 1 FROM students WHERE student_code = ?').get(d.student_code)) d.student_code = `NAVI-${Math.floor(Math.random() * 9000 + 1000)}`;
+  }
+  d.mascot = nextMascot(d.course_id);
+  const cols = Object.keys(d);
+  const id = db.q(`INSERT INTO students (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => d[c])).lastInsertRowid;
+  if (req.body.face_photo) saveFace(id, req.body.face_photo);
+  const s = db.q(`${studentSelect} WHERE s.id = ?`).get(id);
+  broadcast('student', s);
+  res.status(201).json(s);
+}));
+
+app.patch('/api/students/:id', auth.requireUser, wrap((req, res) => {
+  const d = studentInput(req.body || {});
+  const bad = contactError(d);
+  if (bad) return res.status(400).json(bad);
+  if (d.nfc_uid !== undefined && (!d.nfc_uid || d.nfc_uid.length < 8)) return res.status(400).json({ error: 'UID no válido', fields: ['nfc_uid'] });
+  for (const k of ['first_name', 'last_name']) if (k in d && !d[k]) return res.status(400).json({ error: 'El nombre no puede quedar vacío', fields: [k] });
+  if (d.course_id) {
+    const cur = db.q('SELECT course_id, mascot FROM students WHERE id = ?').get(req.params.id);
+    if (cur && cur.course_id !== d.course_id && db.q('SELECT 1 FROM students WHERE course_id = ? AND mascot = ? AND active = 1 AND id != ?').get(d.course_id, cur.mascot, req.params.id)) d.mascot = nextMascot(d.course_id, Number(req.params.id));
+  }
+  const cols = Object.keys(d);
+  if (cols.length) db.q(`UPDATE students SET ${cols.map(c => `${c} = ?`).join(', ')} WHERE id = ?`).run(...cols.map(c => d[c]), req.params.id);
+  if (req.body.face_photo !== undefined) saveFace(Number(req.params.id), req.body.face_photo);
+  const s = db.q(`${studentSelect} WHERE s.id = ?`).get(req.params.id);
+  broadcast('student', s);
+  res.json(s);
+}));
+
+app.delete('/api/students/:id', auth.requireUser, wrap((req, res) => {
+  db.q('UPDATE students SET active = 0 WHERE id = ?').run(req.params.id);
+  broadcast('student', { id: Number(req.params.id), active: 0 });
+  res.json({ ok: true });
+}));
+
+app.get('/api/students/:id/links', auth.requireUser, wrap((req, res) => {
+  const s = db.q('SELECT * FROM students WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'No encontrado' });
+  res.json({ telegram: notifier.telegramLink(s), whatsapp: notifier.whatsappLink(s.parent_phone, `Estimado/a ${s.parent_name || 'representante'}, le escribimos de ${config.institutionName} sobre ${s.first_name}.`), phone: notifier.normalizePhone(s.parent_phone) });
+}));
+
+app.post('/api/students/:id/message', auth.requireUser, wrap(async (req, res) => {
+  try {
+    const results = await notifier.sendCustom(Number(req.params.id), req.body || {});
+    res.json({ results });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message, fields: e.fields });
+    throw e;
+  }
+}));
+
+app.post('/api/students/:id/preview', auth.requireUser, wrap((req, res) => {
+  const b = req.body || {};
+  const kind = ['ARRIVAL', 'LATE', 'ABSENT', 'NOT_IN_CLASS', 'EMERGENCY', 'CUSTOM'].includes(b.kind) ? b.kind : 'CUSTOM';
+  const p = notifier.preview(kind, Number(req.params.id), { subject: b.subject, text: b.text || ' ' });
+  if (!p) return res.status(404).json({ error: 'No encontrado' });
+  res.json(p);
+}));
+
+app.post('/api/students/:id/credential', auth.requireUser, wrap((req, res) => {
+  const out = C.issue(Number(req.params.id), Boolean(req.body && req.body.rotate));
+  if (!out) return res.status(404).json({ error: 'No encontrado' });
+  const h = H.get(Number(req.params.id));
+  const base = config.publicUrl || `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
+  res.json({ ...out, url: h && h.consent && h.token ? `${base}/e/${h.token}` : `${base}/` });
+}));
+
+app.get('/api/students/:id/access', auth.requireUser, (req, res) => res.json(ST.accessInfo(Number(req.params.id))));
+
+app.post('/api/students/:id/reset-access', auth.requireUser, wrap((req, res) => {
+  ST.resetAccess(Number(req.params.id));
+  res.json(ST.accessInfo(Number(req.params.id)));
+}));
+
+app.post('/api/student/card-login', wrap((req, res) => {
+  const ip = req.socket.remoteAddress;
+  if (tooManyAttempts('st:' + ip)) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos.', code: 'LOCKED' });
+  const out = ST.cardLogin(req.body || {});
+  if (out.status !== 200) noteAttempt('st:' + ip);
+  res.status(out.status).json(out.body);
+}));
+
+app.get('/api/student/demo-list', (req, res) => {
+  if (!config.demoMode) return res.status(403).json({ error: 'Solo en modo demostración' });
+  res.json(db.q('SELECT s.id, s.first_name, s.last_name, s.mascot, s.mascot_name, c.code AS course_code FROM students s JOIN courses c ON c.id = s.course_id WHERE s.active = 1 ORDER BY c.id, s.last_name').all());
+});
+
+app.post('/api/student/demo-login', wrap((req, res) => {
+  if (!config.demoMode) return res.status(403).json({ error: 'Solo en modo demostración' });
+  const out = ST.demoLogin(Number(req.body && req.body.student_id));
+  res.status(out.status).json(out.body);
+}));
+
+app.get('/api/student/me', ST.requireStudent, (req, res) => res.json(ST.me(req.student.id)));
+app.patch('/api/student/me', ST.requireStudent, wrap((req, res) => res.json(ST.update(req.student.id, req.body || {}))));
+app.get('/api/student/health', ST.requireStudent, (req, res) => res.json({ health: H.get(req.student.id) }));
+
+app.get('/api/students/:id/health', auth.requireUser, wrap((req, res) => {
+  const id = Number(req.params.id);
+  const h = H.get(id);
+  if (req.query.view) H.logAccess(id, 'APP', req, req.user.id);
+  res.json({ health: h, access: H.accessLog(id) });
+}));
+
+app.put('/api/students/:id/health', auth.requireUser, wrap((req, res) => {
+  const id = Number(req.params.id);
+  if (!db.q('SELECT 1 FROM students WHERE id = ?').get(id)) return res.status(404).json({ error: 'Estudiante no encontrado' });
+  const h = H.save(id, req.body, req.user.id);
+  broadcast('student', { id });
+  res.json({ health: h, access: H.accessLog(id) });
+}));
+
+app.post('/api/students/:id/health/token', auth.requireUser, wrap((req, res) => {
+  const token = H.rotateToken(Number(req.params.id));
+  if (!token) return res.status(404).json({ error: 'Primero guarda la ficha médica' });
+  res.json({ token });
+}));
+
+app.post('/api/emergency/arm', auth.requireUser, wrap((req, res) => {
+  const a = A.armEmergency(req.user.id, 60);
+  res.json({ until: a.until });
+}));
+
+app.post('/api/emergency/disarm', auth.requireUser, wrap((req, res) => {
+  A.disarmEmergency();
+  res.json({ ok: true });
+}));
+
+const emergencyNotified = new Map();
+app.get('/e/:token', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  const data = H.byToken(req.params.token);
+  if (!data || !data.health.consent) return res.status(404).type('html').send(H.unavailable());
+  const s = data.student;
+  H.logAccess(s.id, 'PUBLICO', req);
+  broadcast('emergency_view', { student_id: s.id, student_name: `${s.first_name} ${s.last_name}`, at: new Date().toISOString() });
+  const last = emergencyNotified.get(s.id) || 0;
+  if (Date.now() - last > 10 * 60000) {
+    emergencyNotified.set(s.id, Date.now());
+    setImmediate(() => notifier.notify('EMERGENCY', s.id, null));
+  }
+  res.type('html').send(H.page(data, req.params.token));
+});
+
+app.get('/e/:token/foto', (req, res) => {
+  const data = H.byToken(req.params.token);
+  if (!data || !data.health.consent) return res.status(404).end();
+  const f = H.photoFile(data.student.id);
+  if (!f) return res.status(404).end();
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(f);
+});
+
+function imageAuth(req, res, next) {
+  const id = auth.readToken(String(req.query.t || ''));
+  if (!id) return res.status(401).end();
+  next();
+}
+
+app.get('/api/faces/:id', imageAuth, (req, res) => {
+  const file = path.join(A.FACE_DIR, `${Number(req.params.id)}.jpg`);
+  if (!fs.existsSync(file)) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.sendFile(file);
+});
+
+app.get('/api/snapshots/:id', imageAuth, (req, res) => {
+  const row = db.q('SELECT snapshot_photo FROM attendances WHERE id = ?').get(Number(req.params.id));
+  if (!row || !row.snapshot_photo) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.sendFile(path.join(A.SNAP_DIR, row.snapshot_photo));
+});
+
+app.get('/api/attendance', auth.requireUser, (req, res) => {
+  res.json(A.listByDate(req.query.date || T.localDate()));
+});
+
+function dataUrlToBuffer(s) {
+  const m = /^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/.exec(s || '');
+  return m ? Buffer.from(m[2], 'base64') : null;
+}
+
+app.post('/api/attendance/scan', auth.requireTerminalOrUser, wrap((req, res) => {
+  const b = req.body || {};
+  const terminalId = String(b.terminal_id || 'ESP32-AULA-1').slice(0, 40);
+  if (req.viaTerminal) touchTerminal(terminalId, 'LECTOR', req, b);
+  const out = A.scan({
+    uid: b.uid,
+    terminalId,
+    ts: b.ts || null,
+    presenceId: b.presence_id != null ? String(b.presence_id) : null,
+    snapshotBuffer: dataUrlToBuffer(b.snapshot_photo),
+    source: 'NFC',
+    cred: typeof b.cred === 'string' ? b.cred.slice(0, 200) : null,
+    ntag: b.ntag === true
+  });
+  res.status(out.code).json(out.body);
+}));
+
+app.post('/api/attendance/batch', auth.requireTerminalOrUser, wrap((req, res) => {
+  const b = req.body || {};
+  const terminalId = String(b.terminal_id || 'ESP32-AULA-1').slice(0, 40);
+  const records = Array.isArray(b.records) ? b.records.slice(0, 500) : [];
+  const results = records.map(r => A.scan({ uid: r.uid, terminalId, ts: r.ts, source: 'OFFLINE', cred: typeof r.cred === 'string' ? r.cred.slice(0, 200) : null, ntag: r.ntag === true }).body.status);
+  res.json({ processed: results.length, results });
+}));
+
+app.get('/api/roll/:courseId', auth.requireUser, (req, res) => {
+  res.json(A.rollForCourse(Number(req.params.courseId), req.query.date || T.localDate()));
+});
+
+app.post('/api/roll/:courseId/confirm', auth.requireUser, wrap((req, res) => {
+  const entries = Array.isArray(req.body.students) ? req.body.students : [];
+  res.json(A.confirmRoll(Number(req.params.courseId), req.body.date || T.localDate(), entries, req.user.id));
+}));
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+app.get('/api/export.csv', imageAuth, (req, res) => {
+  const to = DATE_RE.test(req.query.to || '') ? req.query.to : T.localDate();
+  const from = DATE_RE.test(req.query.from || '') ? req.query.from : to;
+  const rows = db.q(`SELECT a.date, a.time_recorded, s.student_code, s.last_name, s.first_name, c.name AS course, a.status, a.source, a.review_state, a.in_class
+    FROM attendances a JOIN students s ON s.id = a.student_id JOIN courses c ON c.id = a.course_id
+    WHERE a.date BETWEEN ? AND ? ORDER BY a.date, c.name, s.last_name, s.first_name`).all(from, to);
+  const ST = { A_TIEMPO: 'Puntual', TARDE: 'Atraso', AUSENTE: 'Ausente' };
+  const SRC = { NFC: 'Tarjeta', MANUAL: 'Docente', AUTO: 'Automático', OFFLINE: 'Sin conexión' };
+  const REV = { PENDIENTE: 'Pendiente', OK: 'Correcto', FRAUDE: 'Suplantación' };
+  const cell = v => {
+    const t = String(v == null ? '' : v);
+    return /[;"\n]/.test(t) || /^[=+\-@]/.test(t) ? `"${t.replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"` : t;
+  };
+  const lines = [['Fecha', 'Hora', 'Código', 'Apellidos', 'Nombres', 'Curso', 'Estado', 'Origen', 'Revisión', 'Visto en el aula'].join(';')];
+  for (const r of rows) lines.push([r.date, r.time_recorded.slice(0, 5), r.student_code, r.last_name, r.first_name, r.course, ST[r.status] || r.status, SRC[r.source] || r.source, REV[r.review_state] || '', r.in_class == null ? '' : r.in_class ? 'Sí' : 'No'].map(cell).join(';'));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="asistencia_${from}${from === to ? '' : '_' + to}.csv"`);
+  res.send('\uFEFF' + lines.join('\r\n'));
+});
+
+app.post('/api/attendance/:id/justify', auth.requireUser, wrap((req, res) => {
+  const b = req.body || {};
+  const r = A.justify(Number(req.params.id), b.justified !== false, b.note, req.user.id);
+  if (!r) return res.status(404).json({ error: 'Registro no encontrado' });
+  res.json(r);
+}));
+
+app.get('/api/review', auth.requireUser, (req, res) => res.json(A.listPendingReview()));
+
+app.post('/api/review/:id', auth.requireUser, wrap((req, res) => {
+  const decision = req.body && req.body.decision;
+  if (!['OK', 'FRAUDE'].includes(decision)) return res.status(400).json({ error: 'Decisión no válida' });
+  res.json(A.decideReview(Number(req.params.id), decision, req.user.id));
+}));
+
+app.get('/api/notifications/pending', auth.requireUser, (req, res) => res.json(notifier.pending(2)));
+
+app.post('/api/notifications/:id/sent', auth.requireUser, wrap((req, res) => {
+  const n = notifier.markManual(Number(req.params.id), req.user.id);
+  if (!n) return res.status(404).json({ error: 'Aviso no encontrado' });
+  res.json({ id: n.id, status: n.status });
+}));
+
+app.post('/api/notifications/:id/resend', auth.requireUser, wrap(async (req, res) => {
+  try {
+    res.json(await notifier.resend(Number(req.params.id)));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
+}));
+
+app.get('/api/notifications', auth.requireUser, (req, res) => {
+  const limit = Math.min(200, parseInt(req.query.limit || '60', 10));
+  res.json(db.q(`SELECT n.*, s.first_name || ' ' || s.last_name AS student_name FROM notifications n LEFT JOIN students s ON s.id = n.student_id ORDER BY n.id DESC LIMIT ?`).all(limit));
+});
+
+function touchTerminal(id, kind, req, b = {}) {
+  const key = kind === 'CAMARA' ? `${id}#CAM` : id;
+  const ip = (req.socket.remoteAddress || '').replace('::ffff:', '');
+  db.q(`INSERT INTO terminals (id, kind, ip, firmware, rssi, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET ip = excluded.ip, firmware = COALESCE(excluded.firmware, firmware), rssi = COALESCE(excluded.rssi, rssi), last_seen = excluded.last_seen, kind = excluded.kind`)
+    .run(key, kind, ip, b.firmware || null, b.rssi != null ? Number(b.rssi) : null, new Date().toISOString());
+  broadcast('terminal', { id: key, kind, online: true });
+}
+
+app.post('/api/terminal/ping', wrap((req, res) => {
+  if (!auth.isTerminal(req)) return res.status(401).json({ error: 'Clave de terminal incorrecta' });
+  const b = req.body || {};
+  const kind = b.kind === 'CAMARA' ? 'CAMARA' : 'LECTOR';
+  touchTerminal(String(b.terminal_id || 'ESP32-AULA-1').slice(0, 40), kind, req, b);
+  res.json({ ok: true, server_time: Math.floor(Date.now() / 1000) });
+}));
+
+app.get('/api/terminals', auth.requireUser, (req, res) => {
+  const rows = db.q('SELECT * FROM terminals ORDER BY id').all();
+  res.json(rows.map(r => ({ ...r, online: r.last_seen ? Date.now() - Date.parse(r.last_seen) < 90000 : false })));
+});
+
+app.post('/api/camera/snapshot', express.raw({ type: ['image/jpeg', 'application/octet-stream'], limit: '2mb' }), auth.requireTerminalOrUser, wrap((req, res) => {
+  const terminalId = String(req.headers['x-terminal-id'] || (req.body && req.body.terminal_id) || 'ESP32-AULA-1').slice(0, 40);
+  let buffer = Buffer.isBuffer(req.body) ? req.body : dataUrlToBuffer(req.body && req.body.image_base64);
+  if (!buffer || buffer.length < 100) return res.status(400).json({ error: 'No llegó ninguna imagen' });
+  if (req.viaTerminal) touchTerminal(terminalId, 'CAMARA', req);
+  res.json({ ok: true, bytes: buffer.length, ...A.receiveSnapshot(terminalId, buffer) });
+}));
+
+app.post('/api/demo/reset-today', auth.requireUser, wrap((req, res) => {
+  if (!config.demoMode && req.user.role !== 'ADMINISTRADOR') return res.status(403).json({ error: 'Solo un administrador puede reiniciar el día' });
+  const date = T.localDate();
+  const rows = db.q('SELECT id, snapshot_photo FROM attendances WHERE date = ?').all(date);
+  for (const r of rows) {
+    if (r.snapshot_photo) {
+      try {
+        fs.unlinkSync(path.join(A.SNAP_DIR, r.snapshot_photo));
+      } catch (e) {}
+    }
+  }
+  db.q('DELETE FROM attendances WHERE date = ?').run(date);
+  db.q('DELETE FROM course_runs WHERE date = ?').run(date);
+  broadcast('reset', { date });
+  res.json({ deleted: rows.length });
+}));
+
+app.post('/api/absences/run', auth.requireUser, wrap((req, res) => res.json({ marked: A.runAbsences() })));
+
+app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
+app.use((req, res) => res.sendFile(path.join(PUBLIC, 'index.html')));
+
+server.on('upgrade', (req, socket, head) => {
+  const url = new URL(req.url, 'http://x');
+  if (url.pathname !== '/ws' || !auth.readToken(url.searchParams.get('token'))) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+});
+
+wss.on('connection', ws => {
+  ws.isAlive = true;
+  ws.on('pong', () => (ws.isAlive = true));
+  ws.on('message', m => {
+    if (String(m) === 'ping') ws.send('pong');
+  });
+});
+
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 30000);
+
+setInterval(() => {
+  try {
+    A.runAbsences();
+  } catch (e) {
+    console.error('Ausencias:', e.message);
+  }
+}, 30000);
+setInterval(() => A.purgeOldPhotos(), 6 * 3600000);
+
+function lanAddresses() {
+  const out = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const i of list || []) if (i.family === 'IPv4' && !i.internal) out.push(i.address);
+  }
+  return out;
+}
+
+if (require.main === module) {
+  server.listen(config.port, () => {
+    A.purgeOldPhotos();
+    setTimeout(() => A.runAbsences(), 3000);
+    notifier.startTelegram();
+    const ips = lanAddresses();
+    const ch = notifier.status();
+    console.log('');
+    console.log('  N.A.V.I listo');
+    console.log(`  En esta PC:      http://localhost:${config.port}`);
+    for (const ip of ips) console.log(`  En tu red WiFi:  http://${ip}:${config.port}`);
+    console.log('');
+    console.log(`  Clave de terminal para el firmware: ${config.terminalKey}`);
+    console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : 'no configurado (se simula)'} · Telegram: ${config.telegram.token ? 'configurando...' : 'no configurado'}`);
+    console.log(`  Modo demo: ${config.demoMode ? 'activado' : 'desactivado'}`);
+    console.log('');
+  });
+}
+
+module.exports = { app, server };

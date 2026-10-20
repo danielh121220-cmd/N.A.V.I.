@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>N.A.V.I</title>
+<style>
+:root { --bg: #F2F2F7; --surface: #FFFFFF; --text: #1C1C1E; --text-2: rgba(60, 60, 67, 0.62); --sep: rgba(60, 60, 67, 0.18); --blue: #007AFF; --red: #FF3B30; --fill: rgba(118, 118, 128, 0.12); color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #000000; --surface: #1C1C1E; --text: #FFFFFF; --text-2: rgba(235, 235, 245, 0.62); --sep: rgba(84, 84, 88, 0.6); --blue: #0A84FF; --red: #FF453A; --fill: rgba(118, 118, 128, 0.24); color-scheme: dark; } }
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: -apple-system, system-ui, Roboto, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 18px; }
+main { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.bot { width: 92px; height: 92px; margin-bottom: 14px; animation: hop 0.7s cubic-bezier(0.32, 1.25, 0.5, 1) both; }
+@keyframes hop { from { transform: translateY(18px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; }
+p.lead { color: var(--text-2); font-size: 15px; margin-top: 6px; line-height: 1.4; }
+.banner { width: 100%; margin-top: 18px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 59, 48, 0.12); color: var(--text); font-size: 14px; line-height: 1.4; text-align: left; display: none; }
+.banner.show { display: block; }
+.group { width: 100%; margin-top: 22px; background: var(--surface); border-radius: 14px; overflow: hidden; text-align: left; }
+label { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; }
+label span { width: 90px; font-size: 16px; flex: none; }
+input { flex: 1; min-width: 0; height: 52px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 17px; }
+.foot { width: 100%; color: var(--text-2); font-size: 13px; text-align: left; padding: 8px 16px 0; line-height: 1.4; }
+button { font: inherit; border: 0; cursor: pointer; }
+.primary { width: 100%; height: 52px; margin-top: 18px; border-radius: 14px; background: var(--blue); color: #fff; font-size: 17px; font-weight: 600; transition: transform 0.15s; }
+.primary:active, .secondary:active { transform: scale(0.97); }
+.primary[disabled] { opacity: 0.5; }
+.secondary { width: 100%; height: 48px; margin-top: 10px; border-radius: 14px; background: var(--fill); color: var(--blue); font-size: 16px; font-weight: 600; }
+.recent { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.recent button { height: 32px; padding: 0 12px; border-radius: 16px; background: var(--fill); color: var(--text); font-size: 14px; }
+.err { color: var(--red); font-size: 14px; margin-top: 10px; min-height: 20px; }
+.ver { color: var(--text-2); font-size: 12px; margin-top: 26px; }
+</style>
+</head>
+<body>
+<main>
+  <svg class="bot" viewBox="0 0 100 100" aria-hidden="true"><path fill="#1382FD" d="M50 16C54 16 58 20 62 26L86 70C90 77 85 86 77 86L23 86C15 86 10 77 14 70L38 26C42 20 46 16 50 16Z"/><rect x="41" y="54" width="8" height="20" rx="4" fill="#fff"/><rect x="53" y="54" width="8" height="20" rx="4" fill="#fff"/></svg>
+  <h1>N.A.V.I</h1>
+  <p class="lead">Conecta la app con el servidor de tu colegio.</p>
+  <div class="banner" id="banner"></div>
+  <form class="group" id="form" autocomplete="off">
+    <label><span>Servidor</span><input id="server" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="192.168.1.50:3000"></label>
+  </form>
+  <p class="foot">La dirección aparece en la ventana de INICIAR_NAVI en la PC, en la línea "En tu red WiFi". El celular y la PC deben estar en la misma red.</p>
+  <div class="recent" id="recent"></div>
+  <div class="err" id="err"></div>
+  <button class="primary" id="go" type="button">Conectar</button>
+  <button class="secondary" id="demo" type="button">Probar sin servidor</button>
+  <p class="ver" id="ver"></p>
+</main>
+<script>
+(function () {
+  var A = window.NaviAndroid;
+  var input = document.getElementById('server');
+  var err = document.getElementById('err');
+  var go = document.getElementById('go');
+  var list = [];
+  try { list = JSON.parse(localStorage.getItem('navi_servers') || '[]'); } catch (e) { list = []; }
+  var saved = A ? A.getServer() : '';
+  if (A) document.getElementById('ver').textContent = 'Versión ' + A.version();
+  if (location.hash === '#sin-conexion' && saved) {
+    var b = document.getElementById('banner');
+    b.textContent = 'No pude conectarme con ' + saved.replace(/^https?:\/\//, '') + '. Revisa que la PC tenga abierto INICIAR_NAVI y que estés en la misma red WiFi.';
+    b.classList.add('show');
+  }
+  input.value = (saved || list[0] || '').replace(/^https?:\/\//, '');
+  function norm(v) {
+    v = String(v || '').trim();
+    if (!v) return '';
+    if (!/^https?:\/\//.test(v)) v = 'http://' + v;
+    if (!/:\d+/.test(v.replace(/^https?:\/\//, '')) && /^http:\/\/\d+\.\d+\.\d+\.\d+$/.test(v)) v += ':3000';
+    return v.replace(/\/+$/, '');
+  }
+  function paintRecent() {
+    var box = document.getElementById('recent');
+    box.innerHTML = '';
+    list.slice(0, 4).forEach(function (s) {
+      var bt = document.createElement('button');
+      bt.type = 'button';
+      bt.textContent = s.replace(/^https?:\/\//, '');
+      bt.onclick = function () { input.value = bt.textContent; connect(true); };
+      box.appendChild(bt);
+    });
+  }
+  function remember(u) {
+    list = [u].concat(list.filter(function (x) { return x !== u; })).slice(0, 4);
+    try { localStorage.setItem('navi_servers', JSON.stringify(list)); } catch (e) {}
+  }
+  function connect(force) {
+    var u = norm(input.value);
+    if (!u) { err.textContent = 'Escribe la dirección del servidor.'; input.focus(); return; }
+    err.textContent = '';
+    go.disabled = true;
+    go.textContent = 'Buscando el servidor…';
+    var done = false;
+    var timer = setTimeout(function () { if (!done) { done = true; fail(u); } }, 5000);
+    fetch(u + '/manifest.webmanifest', { mode: 'no-cors', cache: 'no-store' }).then(function () {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      remember(u);
+      if (A) A.setServer(u); else location.href = u;
+    }).catch(function () { if (!done) { done = true; clearTimeout(timer); fail(u); } });
+  }
+  function fail(u) {
+    go.disabled = false;
+    go.textContent = 'Conectar de todos modos';
+    go.onclick = function () { remember(u); if (A) A.setServer(u); };
+    err.textContent = 'No encuentro el servidor en ' + u.replace(/^https?:\/\//, '') + '.';
+  }
+  go.onclick = function () { connect(false); };
+  input.addEventListener('input', function () { go.textContent = 'Conectar'; go.onclick = function () { connect(false); }; err.textContent = ''; });
+  document.getElementById('form').addEventListener('submit', function (e) { e.preventDefault(); connect(false); });
+  document.getElementById('demo').onclick = function () { if (A) A.openDemo(); };
+  paintRecent();
+})();
+</script>
+</body>
+</html>
