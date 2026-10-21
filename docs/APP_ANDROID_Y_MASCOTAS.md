@@ -10,7 +10,12 @@
 
 Requisitos: Android 7 o superior. Para leer y grabar tarjetas, el celular debe tener NFC activado.
 
-Versión actual: **3.5**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+Versión actual: **3.6**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+
+En la versión 3.6:
+
+- La pantalla ya no se corre a la derecha con la letra grande de Android.
+- "Tu semana" cabe completa y los días dicen Lu, Ma, Mi, Ju, Vi.
 
 En la versión 3.5:
 

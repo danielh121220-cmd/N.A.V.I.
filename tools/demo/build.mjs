@@ -12,6 +12,7 @@ await esbuild.build({
   outfile: 'dist/backend.js',
   alias: {
     'better-sqlite3': S('better-sqlite3.js'),
+    'node:sqlite': S('empty.js'),
     fs: S('fs.js'),
     crypto: S('crypto.js'),
     os: S('os.js'),

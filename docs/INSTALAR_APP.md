@@ -48,4 +48,5 @@ En iPhone, sin HTTPS se puede usar desde Safari pero no se instala con todas las
 | El celular no abre la IP local | PC y celular en la misma red. Permite Node.js en el Firewall de Windows (redes privadas). |
 | No aparece "Instalar app" | Necesitas HTTPS (opción 2) o el flag de Chrome (opción 3). |
 | La cámara del simulador no abre | Solo funciona en `localhost` o HTTPS. |
-| Error con `better-sqlite3` al iniciar | Borra `backend\node_modules` y vuelve a abrir `INICIAR_NAVI.bat`. |
+| Sale "gyp ERR!" o "Visual Studio" al instalar | Era de una versión anterior. Borra `backend\node_modules` y vuelve a abrir `INICIAR_NAVI.bat`: la versión actual ya no compila nada. |
+| "Tu Node.js es muy antiguo" | Instala Node.js LTS (22.13 o más nuevo) desde https://nodejs.org/es. |

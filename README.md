@@ -39,30 +39,23 @@ Los registros sospechosos **nunca** mandan alertas de "fraude" a los padres. El 
 
 ```
 proyecto con pn532/
-├── INICIAR_NAVI.bat            Inicia el servidor y abre la app
+├── INICIAR_NAVI.bat            Sistema real: inicia el servidor y abre la app
+├── INICIAR_NAVI_DEMO.bat       Demostración con datos de ejemplo (base de datos aparte)
 ├── COMPARTIR_EN_CELULAR.bat    Enlace HTTPS temporal para instalar la app en el celular
-├── backend/
+├── backend/                    Servidor (Node.js 22.13 o más nuevo, sin nada que compilar)
 │   ├── server.js               API REST + WebSocket
-│   ├── attendance.js           Lógica de asistencia, ausencias, revisión y cámara
-│   ├── auth.js                 Contraseñas cifradas (scrypt), sesiones firmadas, clave de terminal
+│   ├── attendance.js           Asistencia, ausencias, revisión y cámara
+│   ├── pet.js / student.js     Mascotas, corazones y cuenta del estudiante
+│   ├── credential.js           Credencial firmada que se graba en la tarjeta
 │   ├── notifier.js             Correo, Telegram y enlaces de WhatsApp
-│   ├── database.js             Esquema SQLite y datos de ejemplo
-│   ├── config.js / time.js     Configuración y fechas en hora local
-│   ├── .env.example            Plantilla de configuración opcional
-│   ├── data/                   Base de datos, fotos y claves (se crea sola)
-│   └── public/                 App web instalable (PWA) con los 6 bots
-├── firmware/
-│   ├── navi_esp32_pn532/       Lector: config.h + .ino
-│   └── navi_esp32_cam/         Cámara: config.h + .ino
-└── docs/
-    ├── INSTALAR_APP.md
-    ├── FICHA_MEDICA.md
-    ├── LISTA_DE_MATERIALES.md
-    ├── CONEXIONES_Y_ESQUEMATICO.md
-    ├── CONFIGURACION_WHATSAPP_Y_EMAIL.md
-    ├── ERRORES_CORREGIDOS.md
-    ├── NAVI_timelapse.mp4      Time-lapse de cómo se construyó
-    └── GUIA_DE_COMPETENCIA_PITCH.md
+│   ├── database.js / sqlite.js Esquema y base de datos SQLite integrada en Node
+│   ├── data/ y data-demo/      Datos reales y de la demostración (se crean solos)
+│   └── public/                 App web instalable (PWA)
+├── android/                    App de Android (NFC nativo, demostración con el código 12122008)
+├── firmware/                   Lector ESP32 + PN532 y cámara ESP32-CAM
+├── hardware/cad/               Carcasa del lector, caja de la cámara y llaveros (STEP y STL)
+├── tools/                      Scripts para generar el APK, la demostración y el video
+└── docs/                       Guías, reporte técnico, video y demostración en un solo archivo
 ```
 
 ## Notas

@@ -2938,7 +2938,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
     if (expired) toast({ title: 'Tu sesión terminó', text: 'Acerca otra vez tu tarjeta.', mood: 'sleepy' });
   }
 
-  const WD = ['', 'L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const WD = ['', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
   const DAY_KIND = { A_TIEMPO: ['ok', 'check', 'A tiempo'], TARDE: ['late', 'clock', 'Atraso'], JUSTIFICADO: ['just', 'heart', 'Justificada'], AUSENTE: ['miss', 'moon', 'Faltaste'], NONE: ['none', '', 'Sin clase'], HOY: ['today', '', 'Hoy'] };
   const BADGE_ICON = { egg: '🥚', flag: '🚩', flame: '🔥', star: '⭐', sun: '🌅', medal: '🏅', shield: '🛡️', trophy: '🏆' };
 
@@ -2980,7 +2980,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
           ${lifeHtml(d.pet, name)}
           <div class="kid-grid">
             <div class="kid-card today ${DAY_KIND[d.today.kind] ? DAY_KIND[d.today.kind][0] : ''}"><span class="lbl">Hoy</span><b>${todayLabel}</b><small>${d.today.time && (d.today.kind === 'A_TIEMPO' || d.today.kind === 'TARDE') ? `Marcaste a las ${d.today.time}${d.today.verified ? ' · tarjeta verificada' : ''}` : `Entrada ${esc(st.schedule_start)}`}</small></div>
-            <div class="kid-card"><span class="lbl">Tu semana</span><div class="week">${d.week.map(w => { const k = DAY_KIND[w.kind] || DAY_KIND.NONE; return `<div class="wd ${k[0]}" title="${k[2]}"><i>${k[1] ? icon(k[1]) : ''}</i><span>${WD[w.weekday]}</span></div>`; }).join('')}</div></div>
+            <div class="kid-card"><span class="lbl">Tu semana</span><div class="week">${d.week.map(w => { const k = DAY_KIND[w.kind] || DAY_KIND.NONE; return `<div class="wd ${k[0]}" title="${k[2]}"><i>${k[1] ? icon(k[1]) : ''}</i><span>${WD[w.weekday]}</span></div>`; }).join('')}</div><small>${(() => { const n = d.week.filter(w => w.kind === 'A_TIEMPO').length; return n ? `${n} ${n === 1 ? 'día' : 'días'} a tiempo` : 'Verde = llegaste a tiempo'; })()}</small></div>
             <div class="kid-card level"><span class="lbl">Nivel ${d.level}</span><div class="bar"><span style="width:${lvlPct}%"></span></div><small>${d.punctual} ${d.punctual === 1 ? 'día puntual' : 'días puntuales'} · ${d.punctual === 0 ? 'Llega a tiempo y sumas tu primer día' : d.next_level_in === 5 ? '¡Subiste de nivel!' : `faltan ${d.next_level_in} para el nivel ${d.level + 1}`}</small>${d.streak > 1 ? `<div class="streak">🔥 ${d.streak} días seguidos a tiempo</div>` : ''}</div>
             <div class="kid-card goal ${goal.reached ? 'won' : ''}"><span class="lbl">Meta del curso</span><b>${goal.days ? `${pct}% de asistencia` : 'Empieza el lunes'}</b><div class="bar"><span style="width:${Math.min(100, pct)}%"></span><em style="left:${goal.goal * 100}%"></em></div><small>${goal.reached ? '¡Lo lograron! Todas las mascotas del curso celebran.' : `Si el curso llega al ${Math.round(goal.goal * 100)}% esta semana, todas las mascotas celebran.`}</small></div>
           </div>

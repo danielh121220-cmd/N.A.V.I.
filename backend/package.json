@@ -1,6 +1,6 @@
 {
   "name": "navi-backend",
-  "version": "3.3.0",
+  "version": "3.5.0",
   "description": "N.A.V.I · servidor de asistencia escolar con NFC",
   "main": "server.js",
   "scripts": {
@@ -12,7 +12,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "multer": "^2.4.0",
@@ -20,6 +19,6 @@
     "ws": "^8.22.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   }
 }

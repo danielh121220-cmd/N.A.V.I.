@@ -36,7 +36,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private static final String START = "file:///android_asset/start.html";
     private static final String DEMO = "file:///android_asset/demo.html";
     private static final int FILE_REQUEST = 42;
-    private static final String VERSION = "3.5";
+    private static final String VERSION = "3.6";
 
     private WebView web;
     private NfcAdapter nfc;

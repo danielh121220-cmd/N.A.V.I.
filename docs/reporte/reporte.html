@@ -242,7 +242,7 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
   <table>
     <tr><th>Parte</th><th>Tecnología</th><th>Detalle</th></tr>
     <tr><td>Firmware del lector y la cámara</td><td>C++ en Arduino IDE 2, núcleo ESP32 de Espressif 3.x</td><td>Librerías Adafruit PN532, Adafruit SSD1306, Adafruit GFX, ArduinoJson 7, LittleFS, Adafruit VL53L0X</td></tr>
-    <tr><td>Servidor</td><td>Node.js 22, Express 5, better-sqlite3, ws, nodemailer</td><td>11 módulos, base de datos SQLite en modo WAL</td></tr>
+    <tr><td>Servidor</td><td>Node.js 22 o más nuevo, Express 5, SQLite integrado en Node (node:sqlite), ws, nodemailer</td><td>12 módulos, base de datos SQLite en modo WAL, sin dependencias que se compilen</td></tr>
     <tr><td>Aplicación web</td><td>HTML, CSS y JavaScript sin frameworks</td><td>Instalable (PWA), modo claro y oscuro, tiempo real por WebSocket</td></tr>
     <tr><td>Aplicación Android</td><td>Java, WebView y API NFC de Android (minSdk 24)</td><td>Lee y graba tarjetas NTAG con el NFC del celular</td></tr>
   </table>
@@ -492,7 +492,7 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
   <p>Blanchon, B. <i>ArduinoJson</i> (versión 7) [Librería para Arduino]. https://arduinojson.org</p>
   <p>Espressif Systems. <i>Arduino core for the ESP32</i> (versión 3.x). https://github.com/espressif/arduino-esp32</p>
   <p>Kazuhiko Arase. <i>QR Code Generator</i> (versión 1.4.4, licencia MIT). https://github.com/kazuhikoarase/qrcode-generator</p>
-  <p>OpenJS Foundation y colaboradores. <i>Node.js</i>, <i>Express</i>, <i>better-sqlite3</i>, <i>ws</i> y <i>Nodemailer</i>. https://nodejs.org</p>
+  <p>OpenJS Foundation y colaboradores. <i>Node.js</i> (incluido <i>node:sqlite</i>), <i>Express</i>, <i>ws</i> y <i>Nodemailer</i>. https://nodejs.org</p>
 </section>
 
 </body>

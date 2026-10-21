@@ -128,3 +128,12 @@
 | Sin cursos, el pase de lista mostraba un cronómetro y "Este curso no tiene estudiantes". | Muestra "Aún no hay cursos" y dónde crearlos. |
 | La pestaña Terminal era un simulador. | En el sistema real se llama **Lector**: muestra en vivo lo que ve el estudiante en el lector, el hardware conectado y la configuración del firmware. El simulador queda solo en la demostración. |
 | La demostración dentro del APK se abría en formato de computadora, con letra diminuta, y las tildes podían verse como "RevisiÃ³n". | El archivo de la demostración ahora es una página completa, con la codificación UTF-8 y el tamaño de pantalla del celular declarados al inicio. |
+
+## Ronda 9 (pruebas en un celular real)
+
+| Problema | Corrección |
+| --- | --- |
+| En Windows con Node.js 24, `INICIAR_NAVI.bat` fallaba con "gyp ERR! … Visual Studio": la base de datos (better-sqlite3) necesitaba compilarse y no había versión lista para ese Node. | El servidor usa la base de datos SQLite que ya viene dentro de Node.js (`node:sqlite`). Ya no se compila nada: la instalación baja 77 paquetes de JavaScript en segundos. El `.bat` revisa que Node sea 22.13 o más nuevo y avisa si no. |
+| En el celular, la pantalla de inicio se corría a la derecha y el formulario quedaba cortado. | Con la letra grande de Android, un elemento empujaba el ancho de la pantalla. La columna ahora nunca pasa del ancho del celular. Se probó todo con la letra al 118 %. |
+| En "Tu semana" el último círculo se salía de la tarjeta. | Los cinco días se reparten el ancho disponible. Los días ahora dicen Lu, Ma, Mi, Ju, Vi (antes "X" para miércoles) y abajo dice cuántos días llegaste a tiempo. |
+| El botón del huevo en la versión de demostración se salía en pantallas angostas. | El texto pasa a dos líneas. |
