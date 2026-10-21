@@ -1,4 +1,4 @@
-# N.A.V.I · NFC Attendance & Verification Intelligence 🥀
+# N.A.V.I · NFC Attendance & Verification Intelligence
 
 Pase de lista con tarjetas NFC, avisos automáticos a los representantes y verificación del docente **por excepción**: el profesor solo mira el salón y toca a quien no está.
 
@@ -9,6 +9,8 @@ Pase de lista con tarjetas NFC, avisos automáticos a los representantes y verif
    - **`INICIAR_NAVI.bat`**: el sistema real del colegio. Empieza vacío: la primera cuenta que crees es la del administrador, y la app te guía con **Primeros pasos** (curso, estudiantes, lector y tarjetas).
    - **`INICIAR_NAVI_DEMO.bat`**: la demostración, con estudiantes de ejemplo, la cuenta demo y el simulador del lector. Usa su propia base de datos (`backend/data-demo`), así que nunca se mezcla con la real.
 3. La primera vez instala lo necesario y abre el navegador en `http://localhost:3000`.
+
+Para probar con el lector real (ESP32 + PN532), sigue [`PROBAR_CON_LOS_MODULOS.md`](PROBAR_CON_LOS_MODULOS.md): el servidor deja lista la IP y la clave en el firmware y solo escribes tu WiFi.
 
 En la app de Android, escribe **12122008** en el campo del servidor y toca **Conectar**: se abre la demostración completa dentro del celular, sin servidor.
 
@@ -41,6 +43,7 @@ Los registros sospechosos **nunca** mandan alertas de "fraude" a los padres. El 
 proyecto con pn532/
 ├── INICIAR_NAVI.bat            Sistema real: inicia el servidor y abre la app
 ├── INICIAR_NAVI_DEMO.bat       Demostración con datos de ejemplo (base de datos aparte)
+├── PROBAR_CON_LOS_MODULOS.md   Guía para conectar y programar el ESP32
 ├── COMPARTIR_EN_CELULAR.bat    Enlace HTTPS temporal para instalar la app en el celular
 ├── backend/                    Servidor (Node.js 22.13 o más nuevo, sin nada que compilar)
 │   ├── server.js               API REST + WebSocket

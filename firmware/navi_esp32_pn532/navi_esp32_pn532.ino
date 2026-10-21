@@ -13,11 +13,24 @@
 Adafruit_VL53L0X lox;
 #endif
 
-#define FIRMWARE "lector-3.2"
+#define FIRMWARE "lector-3.4"
 #define QUEUE_FILE "/cola.csv"
 
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
+#ifndef PN532_UART
+#define PN532_UART 0
+#endif
+#ifndef PIN_PN532_RX
+#define PIN_PN532_RX 16
+#endif
+#ifndef PIN_PN532_TX
+#define PIN_PN532_TX 17
+#endif
+#if PN532_UART
+Adafruit_PN532 nfc(PIN_PN532_RESET, &Serial2);
+#else
 Adafruit_PN532 nfc(PIN_PN532_IRQ, PIN_PN532_RESET, &Wire);
+#endif
 
 bool oledOk = false;
 bool nfcOk = false;
@@ -32,6 +45,41 @@ unsigned long lastIdleDraw = 0;
 uint32_t presenceCounter = 0;
 bool personHere = false;
 unsigned long lastSeenPerson = 0;
+bool wifiWasUp = false;
+unsigned long lastNfcTry = 0;
+unsigned long lastNfcCheck = 0;
+int lastPingCode = 0;
+
+String baseUrl();
+bool timeValid();
+void setClock(uint32_t epoch);
+void leds(bool g, bool y, bool r);
+void beepOk();
+void beepWarn();
+void beepBad();
+void oled(const String &a, const String &b, const String &c);
+void drawIdle();
+void feedback(const String &status, bool review, const String &l1, const String &l2);
+int hexNibble(char c);
+int hexToBytes(const char *hex, uint8_t *out, int maxLen);
+void alertFor(const String &status, bool review);
+bool showMascot(const char *bmpHex, const String &l1, const String &l2, const String &l3);
+String writeNdef(const char *hex);
+void reportWrite(const String &job, const String &uid, const String &err);
+void handleWrite(JsonDocument &r, const String &uid, bool ntag);
+bool ndefComplete(const uint8_t *m, uint16_t n);
+String parseCredential(const uint8_t *m, uint16_t n);
+String readCredential(uint8_t uidLen);
+void triggerCamera();
+void queueOffline(const String &uid, const String &cred, bool ntag);
+void syncQueue();
+void scanI2C();
+void nfcFlush();
+bool startNfc();
+void ping();
+void sendScan(const String &uid, const String &cred, bool ntag);
+void ensureWifi();
+void updatePresence();
 
 String baseUrl() {
   return String("http://") + SERVER_HOST + ":" + String(SERVER_PORT);
@@ -100,7 +148,7 @@ void drawIdle() {
     while (f.available()) if (f.read() == '\n') pending++;
     f.close();
   }
-  oled(nfcOk ? "ACERQUE" : "ERROR NFC", nfcOk ? "SU TARJETA" : "REVISE CABLES", String(hhmm) + (pending ? "  cola: " + String(pending) : ""));
+  oled(nfcOk ? "ACERQUE" : "SIN LECTOR", nfcOk ? "SU TARJETA" : "REVISE PN532", String(hhmm) + (pending ? "  cola: " + String(pending) : ""));
 }
 
 void feedback(const String &status, bool review, const String &l1, const String &l2) {
@@ -174,6 +222,7 @@ String writeNdef(const char *hex) {
   for (int i = 0; i < n; i += 4) {
     uint8_t page = 4 + i / 4;
     if (page > 39) return "MUY GRANDE";
+    nfcFlush();
     if (!nfc.ntag2xx_WritePage(page, data + i)) return "SE MOVIO";
   }
   return "";
@@ -197,9 +246,6 @@ void reportWrite(const String &job, const String &uid, const String &err) {
   http.POST(body);
   http.end();
 }
-
-String readCredential(uint8_t uidLen);
-void alertFor(const String &status, bool review);
 
 void handleWrite(JsonDocument &r, const String &uid, bool ntag) {
   String job = r["job"] | "";
@@ -300,6 +346,7 @@ String readCredential(uint8_t uidLen) {
   uint8_t page[4];
   uint16_t n = 0;
   for (uint8_t p = 4; p < 40 && n + 4 <= sizeof(mem); p++) {
+    nfcFlush();
     if (!nfc.ntag2xx_ReadPage(p, page)) break;
     memcpy(mem + n, page, 4);
     n += 4;
@@ -393,12 +440,18 @@ void ping() {
   http.addHeader("X-Terminal-Key", TERMINAL_KEY);
   String body = String("{\"terminal_id\":\"") + TERMINAL_ID + "\",\"kind\":\"LECTOR\",\"firmware\":\"" + FIRMWARE + "\",\"rssi\":" + String(WiFi.RSSI()) + "}";
   int code = http.POST(body);
+  if (code != lastPingCode) {
+    if (code == 200) Serial.println("Servidor conectado. En la app: Lector -> Hardware conectado -> En linea");
+    else if (code < 0) Serial.println("No llego al servidor " + baseUrl() + ": revisa que INICIAR_NAVI este abierto, que la PC y el ESP32 esten en el mismo WiFi y el Firewall de Windows");
+    else if (code != 401) Serial.printf("El servidor respondio %d\n", code);
+    lastPingCode = code;
+  }
   if (code == 200) {
     JsonDocument doc;
     if (!deserializeJson(doc, http.getString())) setClock(doc["server_time"] | 0);
   } else if (code == 401) {
-    Serial.println("Clave de terminal incorrecta: revisa TERMINAL_KEY en config.h");
-    oled("CLAVE", "INCORRECTA", "revise config.h");
+    Serial.println("Clave de terminal incorrecta: abre INICIAR_NAVI en la PC y vuelve a subir el programa");
+    oled("CLAVE", "INCORRECTA", "ABRA INICIAR_NAVI");
   }
   http.end();
 }
@@ -468,7 +521,15 @@ void sendScan(const String &uid, const String &cred, bool ntag) {
 }
 
 void ensureWifi() {
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiWasUp) {
+      wifiWasUp = true;
+      Serial.print("WiFi OK, IP del lector: ");
+      Serial.println(WiFi.localIP());
+    }
+    return;
+  }
+  wifiWasUp = false;
   if (millis() - lastWifiTry < 10000) return;
   lastWifiTry = millis();
   WiFi.disconnect();
@@ -493,8 +554,59 @@ void updatePresence() {
 }
 #endif
 
+void scanI2C() {
+  String found = "";
+  for (uint8_t a = 1; a < 127; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      char b[8];
+      snprintf(b, sizeof(b), " 0x%02X", a);
+      found += b;
+      if (a == 0x24) found += " (PN532)";
+      if (a == 0x3C || a == 0x3D) found += " (OLED)";
+      if (a == 0x29) found += " (VL53L0X)";
+    }
+  }
+  Serial.println("Modulos I2C encontrados:" + (found.length() ? found : String(" ninguno")));
+  if (!PN532_UART && !nfcOk && found.indexOf("0x24") < 0) Serial.println("El PN532 no responde en I2C (0x24): switch 1 en ON, switch 2 en OFF, cables SDA y SCL, y desconecta y conecta el USB");
+}
+
+void nfcFlush() {
+#if PN532_UART
+  delay(2);
+  while (Serial2.available()) Serial2.read();
+#endif
+}
+
+bool startNfc() {
+#if PN532_UART
+  Serial2.begin(115200, SERIAL_8N1, PIN_PN532_RX, PIN_PN532_TX);
+#endif
+  nfc.begin();
+#if PN532_UART
+  Serial2.setTimeout(80);
+#endif
+  uint32_t v = 0;
+  for (int i = 0; i < 3 && !v; i++) {
+    delay(100);
+    nfcFlush();
+    v = nfc.getFirmwareVersion();
+  }
+  nfcOk = v != 0;
+  if (nfcOk) {
+    nfcFlush();
+    nfc.SAMConfig();
+    nfc.setPassiveActivationRetries(PN532_UART ? 0x02 : 0x10);
+    Serial.printf("PN532 v%d.%d listo\n", (v >> 16) & 0xFF, (v >> 8) & 0xFF);
+  }
+  return nfcOk;
+}
+
 void setup() {
   Serial.begin(115200);
+  delay(300);
+  Serial.println();
+  Serial.println("N.A.V.I lector " FIRMWARE " iniciando");
   pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_LED_GREEN, OUTPUT);
   pinMode(PIN_LED_YELLOW, OUTPUT);
@@ -503,20 +615,22 @@ void setup() {
   digitalWrite(PIN_CAM_TRIGGER, LOW);
   leds(true, true, true);
   sessionId = esp_random() % 100000;
+  Serial.println("Preparando la memoria (la primera vez tarda hasta 30 s)...");
   LittleFS.begin(true);
   Wire.begin(PIN_SDA, PIN_SCL);
   Wire.setClock(100000);
+  Wire.setTimeOut(250);
   oledOk = display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  Serial.println(oledOk ? "Pantalla OLED lista" : "Pantalla OLED no detectada: revisa VCC a 3.3V, SDA 21 y SCL 22");
   oled("N.A.V.I", "INICIANDO...", FIRMWARE);
-  nfc.begin();
-  uint32_t v = nfc.getFirmwareVersion();
-  nfcOk = v != 0;
-  if (nfcOk) {
-    nfc.SAMConfig();
-    nfc.setPassiveActivationRetries(0x10);
-    Serial.printf("PN532 v%d.%d listo\n", (v >> 16) & 0xFF, (v >> 8) & 0xFF);
-  } else {
-    Serial.println("PN532 no detectado: revisa SDA/SCL y los switches (I2C)");
+  startNfc();
+  scanI2C();
+  if (!nfcOk) {
+#if PN532_UART
+    Serial.println("PN532 no detectado (modo UART): switch 1 y 2 en OFF, pin SDA/TXD del PN532 al GPIO 16, pin SCL/RXD al GPIO 17. Luego desconecta y conecta el USB.");
+#else
+    Serial.println("PN532 no detectado (modo I2C): switch 1 en ON y switch 2 en OFF, SDA al GPIO 21, SCL al GPIO 22. Si no aparece, prueba el modo UART: PN532_UART 1 en config.h.");
+#endif
   }
 #if USE_PRESENCE_SENSOR
   if (lox.begin()) {
@@ -528,15 +642,20 @@ void setup() {
   configTime(-5 * 3600, 0, "pool.ntp.org", "time.google.com");
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+  Serial.printf("Conectando al WiFi \"%s\"...\n", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   lastWifiTry = millis();
   unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) delay(200);
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) delay(200);
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("WiFi OK, IP: ");
+    wifiWasUp = true;
+    Serial.print("WiFi OK, IP del lector: ");
     Serial.println(WiFi.localIP());
+    Serial.println("Servidor: " + baseUrl());
     ping();
     lastPing = millis();
+  } else {
+    Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en config.h. El ESP32 solo usa redes de 2.4 GHz.");
   }
   leds(false, false, false);
   beepOk();
@@ -565,10 +684,35 @@ void loop() {
     lastSync = millis();
     syncQueue();
   }
-  if (!nfcOk) return;
+  if (!nfcOk) {
+    if (millis() - lastNfcTry > 5000) {
+      lastNfcTry = millis();
+      if (startNfc()) {
+        lastNfcCheck = millis();
+        leds(false, false, false);
+        beepOk();
+        drawIdle();
+      }
+    }
+    return;
+  }
+  if (!feedbackUntil && millis() - lastNfcCheck > 20000) {
+    lastNfcCheck = millis();
+    nfcFlush();
+    if (!nfc.getFirmwareVersion() && (nfcFlush(), !nfc.getFirmwareVersion())) {
+      nfcOk = false;
+      lastNfcTry = millis();
+      Serial.println("Se perdio la conexion con el PN532: revisa los cables. Lo sigo buscando cada 5 s.");
+      leds(false, false, true);
+      beepBad();
+      drawIdle();
+      return;
+    }
+  }
   uint8_t uid[7];
   uint8_t len = 0;
-  if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, 60)) {
+  nfcFlush();
+  if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, PN532_UART ? 150 : 60)) {
     String hex = "";
     for (uint8_t i = 0; i < len; i++) {
       if (uid[i] < 0x10) hex += "0";

@@ -3,7 +3,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-#define FIRMWARE "camara-3.0"
+#define FIRMWARE "camara-3.1"
 #define PIN_FLASH 4
 
 #define PWDN_GPIO_NUM 32
@@ -28,6 +28,15 @@ unsigned long lastPing = 0;
 unsigned long lastWifiTry = 0;
 unsigned long lastShot = 0;
 bool cameraOk = false;
+bool wifiWasUp = false;
+int lastPingCode = 0;
+
+void IRAM_ATTR onTrigger();
+String baseUrl();
+bool initCamera();
+void ensureWifi();
+void ping();
+void captureAndSend();
 
 void IRAM_ATTR onTrigger() {
   triggered = true;
@@ -80,7 +89,15 @@ bool initCamera() {
 }
 
 void ensureWifi() {
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiWasUp) {
+      wifiWasUp = true;
+      Serial.print("WiFi OK, IP de la camara: ");
+      Serial.println(WiFi.localIP());
+    }
+    return;
+  }
+  wifiWasUp = false;
   if (millis() - lastWifiTry < 10000) return;
   lastWifiTry = millis();
   WiFi.disconnect();
@@ -95,7 +112,12 @@ void ping() {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Terminal-Key", TERMINAL_KEY);
   int code = http.POST(String("{\"terminal_id\":\"") + TERMINAL_ID + "\",\"kind\":\"CAMARA\",\"firmware\":\"" + FIRMWARE + "\",\"rssi\":" + String(WiFi.RSSI()) + "}");
-  if (code == 401) Serial.println("Clave de terminal incorrecta: revisa TERMINAL_KEY en config.h");
+  if (code != lastPingCode) {
+    if (code == 200) Serial.println("Servidor conectado. En la app: Lector -> Hardware conectado -> camara En linea");
+    else if (code < 0) Serial.println("No llego al servidor " + baseUrl() + ": revisa que INICIAR_NAVI este abierto y el mismo WiFi");
+    lastPingCode = code;
+  }
+  if (code == 401) Serial.println("Clave de terminal incorrecta: abre INICIAR_NAVI en la PC y vuelve a subir el programa");
   http.end();
 }
 
@@ -127,30 +149,47 @@ void captureAndSend() {
 
 void setup() {
   Serial.begin(115200);
+  delay(300);
+  Serial.println();
+  Serial.println("N.A.V.I " FIRMWARE " iniciando");
   pinMode(PIN_FLASH, OUTPUT);
   digitalWrite(PIN_FLASH, LOW);
   pinMode(PIN_TRIGGER, INPUT_PULLDOWN);
   attachInterrupt(digitalPinToInterrupt(PIN_TRIGGER), onTrigger, RISING);
   cameraOk = initCamera();
-  Serial.println(cameraOk ? "Camara lista" : "Error al iniciar la camara");
+  Serial.println(cameraOk ? (psramFound() ? "Camara lista (con PSRAM, fotos VGA)" : "Camara lista (sin PSRAM, fotos pequenas: activa PSRAM en Herramientas)") : "Error al iniciar la camara: revisa que el cable plano de la camara este bien encajado y que la placa sea AI Thinker ESP32-CAM");
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+  Serial.printf("Conectando al WiFi \"%s\"...\n", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   lastWifiTry = millis();
   unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) delay(200);
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) delay(200);
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("WiFi OK, IP: ");
+    wifiWasUp = true;
+    Serial.print("WiFi OK, IP de la camara: ");
     Serial.println(WiFi.localIP());
+    Serial.println("Servidor: " + baseUrl());
     ping();
     lastPing = millis();
+  } else {
+    Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en config.h. Solo redes de 2.4 GHz.");
   }
+  Serial.println("Para probar sin el lector, escribe f en el Monitor serie y presiona Enter: toma una foto.");
 }
 
 void loop() {
   ensureWifi();
+  while (Serial.available()) {
+    char ch = Serial.read();
+    if (ch == 'f' || ch == 'F') {
+      Serial.println("Foto de prueba");
+      triggered = true;
+    }
+  }
   if (triggered) {
     triggered = false;
+    Serial.println("Disparo recibido");
     if (millis() - lastShot > 400) {
       lastShot = millis();
       captureAndSend();

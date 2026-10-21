@@ -99,8 +99,8 @@
   };
   const SOURCE = { NFC: 'Tarjeta', MANUAL: 'Docente', AUTO: 'Automático', OFFLINE: 'Sin conexión' };
   const KIND = { ARRIVAL: 'Ingreso', LATE: 'Atraso', ABSENT: 'Ausencia', LATE_AFTER_ABSENT: 'Llegó tarde', NOT_IN_CLASS: 'No está en el aula', EMERGENCY: 'Ficha médica abierta', ABSENT_STREAK: '5 faltas seguidas', CUSTOM: 'Mensaje' };
-  const NSTATUS = { ENVIADO: ['Enviado', 'p-ok'], MANUAL: ['Enviado', 'p-ok'], FALLIDO: ['Falló', 'p-abs'], SIMULADO: ['Sin enviar', 'p-none'], ENLACE: ['Por enviar', 'p-info'] };
-  const CHANNEL = { EMAIL: ['Correo', 'mail', 'blue'], WHATSAPP: ['WhatsApp', 'chat', 'green'], TELEGRAM: ['Telegram', 'send', 'teal'] };
+  const NSTATUS = { ENVIADO: ['Enviado', 'p-ok'], MANUAL: ['Enviado', 'p-ok'], FALLIDO: ['Falló', 'p-abs'], SIMULADO: ['Sin enviar', 'p-none'], PENDIENTE: ['Esperando celular', 'p-late'], ENVIANDO: ['Enviando', 'p-info'], ENLACE: ['Por enviar', 'p-info'] };
+  const CHANNEL = { EMAIL: ['Correo', 'mail', 'blue'], WHATSAPP: ['WhatsApp', 'chat', 'green'], TELEGRAM: ['Telegram', 'send', 'teal'], SMS: ['SMS', 'phone', 'indigo'] };
   const PALETTE = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#30B0C7', '#5856D6', '#FF3B30', '#A2845E', '#00C7BE'];
 
   const pad = n => String(n).padStart(2, '0');
@@ -834,6 +834,8 @@
       S.settings = status.settings;
       S.demo = status.demo_mode;
       S.publicUrl = status.public_url;
+      S.lanIp = status.lan_ip;
+      S.srvPort = status.port;
       S.courses = courses;
       S.students = students;
       S.records = records;
@@ -873,6 +875,13 @@
     for (const id of ['connSide', 'connTop']) { const el = $('#' + id); if (el) el.className = 'conn ' + (on ? 'on' : 'off'); }
   }
 
+  const smsHere = () => Boolean(!S.demo && window.NaviAndroid && typeof NaviAndroid.canSms === 'function' && NaviAndroid.canSms() && store.get('navi_sms') === '1' && NaviAndroid.smsReady());
+  const wsSend = o => { try { if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(o)); } catch (e) {} };
+  function smsAnnounce() {
+    if (smsHere()) wsSend({ type: 'sms_gateway', on: true, device: NaviAndroid.deviceName() });
+  }
+  window.naviSmsResult = (id, ok, error) => wsSend({ type: 'sms_result', id, ok, error });
+
   let wsRetry = 0;
   function connectWS() {
     if (!S.token) return;
@@ -883,6 +892,7 @@
       if (wsRetry > 0) loadAll();
       wsRetry = 0;
       setConn(true);
+      smsAnnounce();
     };
     ws.onclose = () => {
       setConn(false);
@@ -954,6 +964,11 @@
       refreshStats();
     } else if (type === 'channels') {
       S.channels = p;
+      if (S.view === 'ajustes' && !sheetState) renderView();
+    } else if (type === 'sms_job') {
+      if (smsHere()) NaviAndroid.sendSms(String(p.id), p.phone, p.text);
+    } else if (type === 'sms_test') {
+      toast(p.ok ? { title: 'SMS de prueba enviado', text: 'Revisa el celular que lo recibe.', mood: 'happy', sound: 'success' } : { title: 'No se envió el SMS', text: p.error || '', mood: 'sad', sound: 'bad' });
     } else if (type === 'notification') {
       S.notifications.unshift({ ...p, created_at: p.created_at || new Date().toISOString() });
       S.notifications.length = Math.min(S.notifications.length, 60);
@@ -1461,6 +1476,84 @@
             if (S.view === 'ajustes') renderView();
           } catch (err) { toast({ title: 'No se pudo', text: err.message, mood: 'sad' }); }
         }));
+      }
+    });
+  }
+
+  async function openSmsSettings() {
+    let data;
+    try { data = await api('/messaging'); } catch (e) { return toast({ title: 'No se pudo abrir', text: e.message, mood: 'sad' }); }
+    const c = data.config;
+    const st = data.status;
+    const can = canConfigure();
+    const android = Boolean(window.NaviAndroid && typeof NaviAndroid.canSms === 'function');
+    const phoneOk = android && NaviAndroid.canSms();
+    const here = smsHere();
+    openSheet({
+      title: 'SMS',
+      onClose: () => setTimeout(() => { if (S.view === 'ajustes') renderView(); }, 50),
+      left: `<button class="btn btn-plain" data-close>Listo</button>`,
+      body: `
+        <form id="smsForm" novalidate autocomplete="off">
+          <div class="notif-hero">${ico('phone', 'indigo')}<div><b>Mensajes de texto (SMS)</b><small>Llegan a cualquier celular, aunque no tenga internet ni WhatsApp</small></div></div>
+          <p class="group-foot" style="padding-top:0">Los SMS salen de un celular Android con chip, por ejemplo el del docente o uno del colegio, que tenga abierta la app N.A.V.I. Cada mensaje usa el saldo o el plan de ese chip.</p>
+          <div class="group" style="margin-top:12px">
+            <div class="cell has-icon">${ico('bell', 'indigo')}<div class="grow"><div class="t">Enviar avisos por SMS</div><div class="s" style="white-space:normal">Llegadas, atrasos y ausencias, según lo que actives en Avisos</div></div><label class="switch"><input type="checkbox" id="smsOn" ${c.sms_on ? 'checked' : ''} ${can ? '' : 'disabled'}><span></span></label></div>
+            <div class="cell has-icon">${ico('cpu', st.sms_device ? 'green' : 'graphite')}<div class="grow"><div class="t">Celular que envía</div><div class="s" id="smsDev">${st.sms_device ? esc(st.sms_device) + ' · en línea' : 'Ninguno conectado'}</div></div></div>
+          </div>
+          ${android ? `<div class="group-title">Este celular</div>
+          <div class="group">
+            <div class="cell has-icon">${ico('phone', 'green')}<div class="grow"><div class="t">Enviar los SMS desde este celular</div><div class="s" style="white-space:normal">${phoneOk ? 'Deja la app abierta o en segundo plano y con señal' : 'Este dispositivo no tiene chip para SMS'}</div></div><label class="switch"><input type="checkbox" id="smsHere" ${here ? 'checked' : ''} ${phoneOk ? '' : 'disabled'}><span></span></label></div>
+          </div>` : `<p class="group-foot" style="margin-top:14px">Para enviar los SMS, abre la app de Android N.A.V.I en un celular con chip y activa <b>Enviar los SMS desde este celular</b> en Ajustes → SMS.</p>`}
+          <div class="group-title">Probar</div>
+          <div class="group">
+            ${frow('to', 'Celular', { type: 'tel', placeholder: '09XXXXXXXX', addon: '<button type="button" class="btn btn-tinted btn-sm" id="testSms">Probar</button>' })}
+          </div>
+          <p class="group-foot">El mensaje dice, por ejemplo: «N.A.V.I · ${esc((S.user && S.user.institution_name) || 'Colegio')}: Daniel Heredia ingresó a clases a las 07:02.»</p>
+        </form>`,
+      onMount(el) {
+        const form = $('#smsForm', el);
+        const on = $('#smsOn', el);
+        on.addEventListener('change', async () => {
+          try {
+            const r = await api('/messaging', { method: 'PUT', body: { sms_on: on.checked } });
+            S.channels = r.status;
+            toast({ title: on.checked ? 'Avisos por SMS activados' : 'Avisos por SMS apagados', mood: on.checked ? 'happy' : 'neutral' });
+          } catch (e) { on.checked = !on.checked; toast({ title: 'No se pudo', text: e.message, mood: 'sad' }); }
+        });
+        const hereEl = $('#smsHere', el);
+        if (hereEl) hereEl.addEventListener('change', () => {
+          if (!hereEl.checked) {
+            store.set('navi_sms', '0');
+            wsSend({ type: 'sms_gateway', on: false });
+            return;
+          }
+          window.naviSmsPermission = granted => {
+            window.naviSmsPermission = null;
+            if (!granted) {
+              hereEl.checked = false;
+              return toast({ title: 'Sin permiso para SMS', text: 'Acepta el permiso para que N.A.V.I pueda enviar mensajes.', mood: 'confused', sound: 'warn' });
+            }
+            store.set('navi_sms', '1');
+            smsAnnounce();
+            const d = $('#smsDev', el);
+            if (d) d.textContent = NaviAndroid.deviceName() + ' · en línea';
+            toast({ title: 'Este celular enviará los SMS', mood: 'happy', sound: 'success' });
+          };
+          NaviAndroid.requestSms();
+        });
+        $('#testSms', el).addEventListener('click', async ev => {
+          const btn = ev.currentTarget;
+          const to = form.to.value.trim();
+          if (!to) return setFieldError(form, ['to']);
+          btn.disabled = true;
+          try {
+            const r = await api('/messaging/test', { method: 'POST', body: { channel: 'sms', to } });
+            if (r.ok) toast({ title: 'Enviando SMS de prueba…', text: `Desde ${r.device}`, mood: 'thinking' });
+            else { if (r.fields) setFieldError(form, r.fields); toast({ title: 'No se pudo probar', text: r.error, mood: 'sad', sound: 'bad' }); }
+          } catch (e) { toast({ title: 'No se pudo', text: e.message, mood: 'sad' }); }
+          btn.disabled = false;
+        });
       }
     });
   }
@@ -2335,8 +2428,9 @@
 
   VIEWS.terminal = {
     html() {
-      const host = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'IP_DE_TU_PC' : location.hostname;
-      const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+      const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      const host = local ? (S.lanIp || 'IP_DE_TU_PC') : location.hostname;
+      const port = local && S.srvPort ? String(S.srvPort) : location.port || (location.protocol === 'https:' ? '443' : '80');
       const course = S.courses.find(c => c.id === S.rollCourse) || S.courses[0];
       const list = S.students.filter(s => !course || s.course_id === course.id).slice(0, 18);
       const sim = S.demo;
@@ -2371,7 +2465,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
             <div class="group"><div style="padding:14px 16px">
               <div class="code" id="fwCfg">#define SERVER_HOST "${esc(host)}"\n#define SERVER_PORT ${esc(port)}\n#define TERMINAL_KEY "${isAdmin() ? '…' : 'pídela al administrador'}"\n#define TERMINAL_ID "ESP32-AULA-1"</div>
             </div>${isAdmin() ? `<button class="cell center" data-act="copyCfg">Copiar configuración</button>` : ''}</div>
-            <p class="group-foot">Pégalo en <span class="mono">config.h</span> de ambos firmwares. El ESP32 y esta PC deben estar en la misma red WiFi.${host === 'IP_DE_TU_PC' ? ' Abriste la app con localhost: la IP de tu PC aparece en la ventana del servidor ("En tu red WiFi").' : ''}</p>
+            <p class="group-foot">El servidor ya guarda la IP y la clave en <span class="mono">servidor.h</span>, dentro de las dos carpetas del firmware. Solo escribe el nombre y la clave de tu WiFi en <span class="mono">config.h</span> y sube el programa. El ESP32 y esta PC deben estar en la misma red WiFi.</p>
             ${sim ? `
             <div class="group-title">Preparar una demostración</div>
             <div class="group">
@@ -2530,6 +2624,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('mail', 'blue')}<div class="grow"><div class="t">Correo</div><div class="s">${ch.email ? esc(ch.email_from) : (S.demo ? 'Sin configurar · se simula' : 'Sin configurar')}</div></div>${ch.email ? '' : '<span class="pill p-late">Configurar</span>'}${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('door', 'graphite')}<div class="grow"><div class="t">Copia a la institución</div><div class="s">${ch.inst_email ? esc(ch.inst_email) : 'DECE o inspección'}</div></div><span class="v">${ch.inst_email ? { URGENT: 'Urgentes', ALL: 'Todos', NONE: 'Nunca' }[ch.inst_cc] || '' : 'No'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgWa"' : ''}>${ico('chat', 'green')}<div class="grow"><div class="t">WhatsApp</div><div class="s">${ch.wa_urgent === false ? 'Solo si no llegó otro aviso' : 'También en ausencias y emergencias'}</div></div><span class="v">${ch.whatsapp === 'API' ? 'Automático' : 'Un toque'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
+              <button class="cell has-icon" data-act="cfgSms">${ico('phone', 'indigo')}<div class="grow"><div class="t">SMS al celular</div><div class="s">${ch.sms ? (ch.sms_device ? 'Desde ' + esc(ch.sms_device) : 'Falta un celular que los envíe') : 'Mensaje de texto normal, sin internet'}</div></div><span class="v">${ch.sms ? (ch.sms_device ? 'Activo' : 'En espera') : 'No'}</span>${icon('chevron', 'chev')}</button>
               <div class="cell has-icon">${ico('send', 'teal')}<div class="grow t">Telegram</div><span class="v">${ch.telegram ? '@' + esc(ch.telegramBot) : 'No configurado'}</span></div>
             </div>
             <p class="group-foot">${can ? 'Toca para configurar y enviar una prueba.' : 'Solo el administrador puede configurar los canales.'}</p>
@@ -2654,6 +2749,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
   handlers.mascotGallery = () => openMascotGallery();
   handlers.cfgMail = () => openMailSettings();
   handlers.cfgWa = () => openWaSettings();
+  handlers.cfgSms = () => openSmsSettings();
   handlers.sfx = el => SFX.setSounds(el.checked);
   handlers.voices = el => { SFX.setVoices(el.checked); if (el.checked) SFX.bot((S.user && S.user.avatar) || 'triangle', 'happy'); };
   handlers.toggleDay = el => { el.classList.toggle('on'); haptic(5); };

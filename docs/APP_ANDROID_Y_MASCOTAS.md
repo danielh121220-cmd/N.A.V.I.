@@ -10,7 +10,15 @@
 
 Requisitos: Android 7 o superior. Para leer y grabar tarjetas, el celular debe tener NFC activado.
 
-Versión actual: **3.6**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+Versión actual: **3.8**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+
+En la versión 3.8:
+
+- Puede enviar los avisos por **SMS** desde el chip del celular: **Ajustes → SMS al celular → Enviar los SMS desde este celular**. La guía está en `CONFIGURACION_WHATSAPP_Y_EMAIL.md`.
+
+En la versión 3.7:
+
+- Ya no aparece un recuadro azul al tocar la mascota, los botones o las tarjetas.
 
 En la versión 3.6:
 

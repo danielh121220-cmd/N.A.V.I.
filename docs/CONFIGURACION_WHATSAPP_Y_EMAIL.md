@@ -1,10 +1,11 @@
-# Avisos a representantes: correo, WhatsApp y Telegram
+# Avisos a representantes: correo, SMS, WhatsApp y Telegram
 
 Por defecto N.A.V.I avisa solo cuando hay **atraso** o **ausencia** (se cambia en **Ajustes → Avisos a representantes**). Todo se configura desde la app, en **Ajustes → Canales**, sin tocar archivos.
 
 | Canal | Cómo llega | Qué necesitas |
 | --- | --- | --- |
 | Correo | Automático, con diseño, foto del estudiante y copia al DECE | Una cuenta de Gmail con contraseña de aplicación |
+| SMS | Automático, como mensaje de texto normal, aunque el celular del representante no tenga internet | Un celular Android con chip y la app N.A.V.I abierta |
 | WhatsApp un toque | La app prepara el mensaje y tú tocas "Enviar" | Nada, funciona desde hoy |
 | WhatsApp automático | Sale solo desde el número del colegio | Cuenta de Meta Business y una plantilla aprobada |
 | Telegram | Automático y gratis | Un bot de @BotFather (en `backend/.env`) |
@@ -32,6 +33,22 @@ Cuando un representante responde un correo, la respuesta llega al correo del DEC
 ### Varios correos por estudiante
 
 En la ficha del estudiante, el campo **Correo** acepta dos correos separados por coma (por ejemplo el del papá y el de la mamá). Los dos reciben el aviso.
+
+## SMS (mensaje de texto al número del representante)
+
+Los SMS salen de un **celular Android con chip** que tenga la app N.A.V.I abierta: puede ser el del docente o uno del colegio. Cada SMS usa el saldo o el plan de ese chip.
+
+1. En la PC: **Ajustes → Canales → SMS al celular** y activa **Enviar avisos por SMS** (solo el administrador).
+2. En el celular que enviará los SMS: abre la app de Android, entra con tu cuenta y ve a **Ajustes → SMS al celular**. Activa **Enviar los SMS desde este celular** y acepta el permiso de SMS.
+3. En **Probar**, escribe tu número y toca **Probar**: te llega un SMS de ejemplo.
+4. En **Ajustes → Avisos a representantes** elige qué avisar: atrasos, ausencias o **cada llegada**.
+
+El mensaje dice, por ejemplo: *«N.A.V.I · Colegio: Daniel Heredia ingresó a clases a las 07:02.»*
+
+- Si el celular que envía está apagado o sin internet, los SMS quedan **esperando** y salen solos apenas vuelve (hasta 6 horas después).
+- En **Inicio → Avisos** cada SMS aparece como *Esperando celular*, *Enviando*, *Enviado* o *Falló* (con el motivo: sin señal, sin saldo, modo avión).
+- Deja la app abierta o en segundo plano. Si Android la cierra para ahorrar batería, en los ajustes del celular quita la optimización de batería para N.A.V.I.
+- En la versión de demostración los SMS no se envían, para no escribir a números inventados.
 
 ## WhatsApp
 

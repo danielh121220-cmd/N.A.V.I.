@@ -1,7 +1,14 @@
 package ec.navi.app;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.telephony.SmsManager;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.net.Uri;
@@ -30,13 +37,17 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 
 public class MainActivity extends Activity implements NfcAdapter.ReaderCallback {
     private static final String START = "file:///android_asset/start.html";
     private static final String DEMO = "file:///android_asset/demo.html";
     private static final int FILE_REQUEST = 42;
-    private static final String VERSION = "3.6";
+    private static final int SMS_REQUEST = 77;
+    private static final String SMS_SENT = "ec.navi.app.SMS_SENT";
+    private static final String VERSION = "3.8";
 
     private WebView web;
     private NfcAdapter nfc;
@@ -45,6 +56,8 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private String pendingId;
     private String pendingMode;
     private String pendingArg;
+    private BroadcastReceiver smsReceiver;
+    private final HashMap<String, int[]> smsParts = new HashMap<String, int[]>();
 
     @Override
     protected void onCreate(Bundle state) {
@@ -397,6 +410,66 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         });
     }
 
+    private void js(final String code) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (web != null) web.evaluateJavascript(code, null);
+            }
+        });
+    }
+
+    private boolean smsAllowed() {
+        return Build.VERSION.SDK_INT < 23 || checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void smsDone(String id, boolean ok, String error) {
+        js("window.naviSmsResult&&window.naviSmsResult(" + JSONObject.quote(id) + "," + ok + "," + JSONObject.quote(error == null ? "" : error) + ")");
+    }
+
+    private void ensureSmsReceiver() {
+        if (smsReceiver != null) return;
+        smsReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String id = intent.getStringExtra("id");
+                if (id == null) return;
+                int code = getResultCode();
+                synchronized (smsParts) {
+                    int[] st = smsParts.get(id);
+                    if (st == null) return;
+                    st[0]--;
+                    if (code != Activity.RESULT_OK && st[1] == 0) st[1] = code == SmsManager.RESULT_ERROR_NO_SERVICE ? 2 : code == SmsManager.RESULT_ERROR_RADIO_OFF ? 3 : 1;
+                    if (st[0] > 0) return;
+                    smsParts.remove(id);
+                    if (st[1] == 0) smsDone(id, true, null);
+                    else smsDone(id, false, st[1] == 2 ? "El celular no tiene señal" : st[1] == 3 ? "El celular está en modo avión" : "El operador no aceptó el SMS (revisa el saldo o el plan)");
+                }
+            }
+        };
+        IntentFilter f = new IntentFilter(SMS_SENT);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(smsReceiver, f, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(smsReceiver, f);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == SMS_REQUEST) js("window.naviSmsPermission&&window.naviSmsPermission(" + smsAllowed() + ")");
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (smsReceiver != null) {
+            try {
+                unregisterReceiver(smsReceiver);
+            } catch (Exception e) {
+            }
+            smsReceiver = null;
+        }
+        super.onDestroy();
+    }
+
     private void go(final String url) {
         runOnUiThread(new Runnable() {
             @Override
@@ -408,6 +481,70 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     }
 
     private class Bridge {
+        @JavascriptInterface
+        public boolean canSms() {
+            return getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY);
+        }
+
+        @JavascriptInterface
+        public boolean smsReady() {
+            return canSms() && smsAllowed();
+        }
+
+        @JavascriptInterface
+        public void requestSms() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (smsAllowed()) js("window.naviSmsPermission&&window.naviSmsPermission(true)");
+                    else requestPermissions(new String[]{Manifest.permission.SEND_SMS}, SMS_REQUEST);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String deviceName() {
+            String m = Build.MODEL == null ? "" : Build.MODEL;
+            String b = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER;
+            return m.toLowerCase().startsWith(b.toLowerCase()) ? m : (b + " " + m).trim();
+        }
+
+        @JavascriptInterface
+        public void sendSms(final String id, final String phone, final String text) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (!smsAllowed()) {
+                        smsDone(id, false, "Falta el permiso para enviar SMS en este celular");
+                        return;
+                    }
+                    try {
+                        ensureSmsReceiver();
+                        SmsManager sm = Build.VERSION.SDK_INT >= 31 ? getSystemService(SmsManager.class) : SmsManager.getDefault();
+                        ArrayList<String> parts = sm.divideMessage(text);
+                        ArrayList<PendingIntent> sent = new ArrayList<PendingIntent>();
+                        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
+                        for (int i = 0; i < parts.size(); i++) {
+                            Intent it = new Intent(SMS_SENT);
+                            it.setPackage(getPackageName());
+                            it.putExtra("id", id);
+                            sent.add(PendingIntent.getBroadcast(MainActivity.this, (id + "#" + i).hashCode(), it, flags));
+                        }
+                        synchronized (smsParts) {
+                            smsParts.put(id, new int[]{parts.size(), 0});
+                        }
+                        if (parts.size() == 1) sm.sendTextMessage(phone, null, text, sent.get(0), null);
+                        else sm.sendMultipartTextMessage(phone, null, parts, sent, null);
+                    } catch (Exception e) {
+                        synchronized (smsParts) {
+                            smsParts.remove(id);
+                        }
+                        smsDone(id, false, "No se pudo enviar: " + e.getMessage());
+                    }
+                }
+            });
+        }
+
         @JavascriptInterface
         public void nfcRead(String id, String arg) {
             start(id, "read", arg);

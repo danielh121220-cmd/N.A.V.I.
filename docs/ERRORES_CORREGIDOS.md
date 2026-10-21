@@ -137,3 +137,16 @@
 | En el celular, la pantalla de inicio se corría a la derecha y el formulario quedaba cortado. | Con la letra grande de Android, un elemento empujaba el ancho de la pantalla. La columna ahora nunca pasa del ancho del celular. Se probó todo con la letra al 118 %. |
 | En "Tu semana" el último círculo se salía de la tarjeta. | Los cinco días se reparten el ancho disponible. Los días ahora dicen Lu, Ma, Mi, Ju, Vi (antes "X" para miércoles) y abajo dice cuántos días llegaste a tiempo. |
 | El botón del huevo en la versión de demostración se salía en pantallas angostas. | El texto pasa a dos líneas. |
+| Al tocar la mascota o cualquier tarjeta, Android pintaba un recuadro azul encima. | Se quitó el resaltado de toque de Android en toda la app; cada botón ya tiene su propia animación al tocarlo. |
+| Para probar con el lector había que copiar a mano la IP y la clave de terminal en dos archivos del firmware, y era fácil equivocarse. | Al iniciar, el servidor escribe `servidor.h` en las dos carpetas del firmware con la IP, el puerto y la clave. Solo se escribe el WiFi en `config.h`. Guía nueva: `PROBAR_CON_LOS_MODULOS.md`. |
+| Arduino IDE 2 con el núcleo ESP32 3.3.11 no compilaba el lector: "'alertFor' was not declared in this scope". | Arduino no generó la declaración automática de esa función. Los dos programas ahora declaran todas sus funciones al inicio. Se compilaron con el mismo núcleo 3.3.11 y las librerías actuales (con y sin el sensor VL53L0X) sin errores. |
+| Las guías decían que el PN532 va en I2C con "CH1 OFF y CH2 ON", pero esa posición es SPI. Con eso el ESP32 mostraba "PN532 no detectado". | Corregido en todas las guías, el diagrama y el reporte: **switch 1 en ON y switch 2 en OFF** es I2C (según el manual del módulo V3). El Monitor serie ahora lo dice al fallar. |
+| Con algunos PN532, el ESP32 no los encontraba por I2C y además el bus dejaba de responder (ni la pantalla aparecía en la búsqueda). | El lector puede usar el PN532 por UART (`#define PN532_UART 1`, GPIO 16 y 17, switches en OFF) y deja el I2C solo para la pantalla. Al arrancar, el Monitor serie lista los módulos I2C que encuentra. |
+| Con el PN532 por UART el lector lo detectaba, pero nunca leía una tarjeta. | Cuando no había tarjeta, la respuesta del PN532 llegaba tarde y se quedaba en el buffer del puerto serie, y desordenaba todas las lecturas siguientes. Ahora el lector limpia el buffer antes de cada orden, espera un poco más la respuesta y hace menos reintentos por lectura (lector-3.4). |
+
+## Ronda 10 (SMS y cámara)
+
+| Problema | Corrección |
+| --- | --- |
+| Los avisos al número del representante solo podían salir por WhatsApp de un toque (manual) o con la API de Meta (pagada y con aprobación). | Nuevo canal **SMS**: un celular Android con chip y la app N.A.V.I envía los SMS solo, desde su propio plan. Si el celular se desconecta, los SMS esperan y salen al volver. Cada SMS muestra su estado en Avisos. |
+| La cámara no explicaba qué fallaba y solo se podía probar con el lector conectado. | El Monitor serie de la cámara indica PSRAM, WiFi y servidor, y con la letra **f** toma una foto de prueba (camara-3.1). |

@@ -44,7 +44,7 @@ Ajustes sugeridos: PLA, capa de 0,2 mm, 3 perímetros, 20 % de relleno. El frent
 ### Pasos de armado
 
 1. Pega el panel negro en su hueco del frente.
-2. Coloca el OLED, el PN532 (con CH1 OFF y CH2 ON) y, si lo usas, el VL53L0X en sus esquineros. Ponlos con la cara hacia el frente.
+2. Coloca el OLED, el PN532 (con switch 1 en ON y switch 2 en OFF) y, si lo usas, el VL53L0X en sus esquineros. Ponlos con la cara hacia el frente.
 3. Mete los LEDs desde adentro. La pata larga (+) va al GPIO y la corta a GND con su resistencia de 220 Ω.
 4. Encaja el buzzer en su vaso.
 5. Pega el ESP32 en la tapa con el USB hacia la muesca.

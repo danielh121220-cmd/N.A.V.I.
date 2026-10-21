@@ -1,12 +1,18 @@
 #pragma once
 
-#define WIFI_SSID "TU_RED_WIFI"
-#define WIFI_PASS "TU_CONTRASENA_WIFI"
+#define WIFI_SSID "Claro_MORGAN"
+#define WIFI_PASS "098087916312122008"
 
+#define TERMINAL_ID "ESP32-AULA-1"
+#define PN532_UART 1
+
+#if __has_include("servidor.h")
+#include "servidor.h"
+#else
 #define SERVER_HOST "192.168.1.100"
 #define SERVER_PORT 3000
-#define TERMINAL_KEY "PEGA_AQUI_LA_CLAVE_DE_TERMINAL"
-#define TERMINAL_ID "ESP32-AULA-1"
+#define TERMINAL_KEY "ABRE_INICIAR_NAVI_PARA_CREAR_SERVIDOR_H"
+#endif
 
 #define USE_PRESENCE_SENSOR 0
 #define PRESENCE_MM 650

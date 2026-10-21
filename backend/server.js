@@ -199,6 +199,8 @@ app.get('/api/status', auth.requireUser, (req, res) => {
     channels: notifier.status(),
     demo_mode: config.demoMode,
     public_url: config.publicUrl || null,
+    lan_ip: lanAddresses()[0] || null,
+    port: config.port,
     settings: getSettings()
   });
 });
@@ -237,7 +239,7 @@ app.put('/api/messaging', auth.requireUser, wrap(async (req, res) => {
 app.post('/api/messaging/test', auth.requireUser, wrap(async (req, res) => {
   if (!canConfigure(req)) return res.status(403).json({ error: 'Solo un administrador puede hacer esto.' });
   const b = req.body || {};
-  const out = b.channel === 'whatsapp' ? await notifier.testWhatsapp(b.to) : await notifier.testEmail(b.to, b.kind);
+  const out = b.channel === 'whatsapp' ? await notifier.testWhatsapp(b.to) : b.channel === 'sms' ? await notifier.testSms(b.to) : await notifier.testEmail(b.to, b.kind);
   res.status(out.ok ? 200 : 400).json(out.ok ? out : { ...out, error: out.error });
 }));
 
@@ -779,11 +781,47 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
 });
 
+let smsGateway = null;
+function sendToGateway(job) {
+  if (!smsGateway || smsGateway.readyState !== 1) return false;
+  smsGateway.send(JSON.stringify({ type: 'sms_job', payload: job, at: new Date().toISOString() }));
+  return true;
+}
+notifier.setSmsSender(sendToGateway, () => (smsGateway && smsGateway.readyState === 1 ? smsGateway.smsDevice : null));
+function flushSms() {
+  for (const job of notifier.smsJobs(6)) if (sendToGateway(job)) notifier.markSmsSending(job.id);
+}
+setInterval(() => { if (smsGateway) flushSms(); }, 60000);
+
 wss.on('connection', ws => {
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));
   ws.on('message', m => {
-    if (String(m) === 'ping') ws.send('pong');
+    const raw = String(m);
+    if (raw === 'ping') return ws.send('pong');
+    let msg = null;
+    try { msg = JSON.parse(raw); } catch (e) { return; }
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'sms_gateway') {
+      if (msg.on) {
+        ws.smsDevice = String(msg.device || 'Celular Android').slice(0, 60);
+        smsGateway = ws;
+        broadcast('channels', notifier.status());
+        flushSms();
+      } else if (smsGateway === ws) {
+        smsGateway = null;
+        broadcast('channels', notifier.status());
+      }
+    } else if (msg.type === 'sms_result' && ws === smsGateway) {
+      if (String(msg.id).startsWith('t')) broadcast('sms_test', { ok: Boolean(msg.ok), error: msg.error || null });
+      else notifier.smsResult(msg.id, Boolean(msg.ok), msg.error);
+    }
+  });
+  ws.on('close', () => {
+    if (smsGateway === ws) {
+      smsGateway = null;
+      broadcast('channels', notifier.status());
+    }
   });
 });
 
@@ -809,10 +847,29 @@ setInterval(() => A.purgeOldPhotos(), 6 * 3600000);
 
 function lanAddresses() {
   const out = [];
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const i of list || []) if (i.family === 'IPv4' && !i.internal) out.push(i.address);
+  for (const [name, list] of Object.entries(os.networkInterfaces())) {
+    if (/vbox|virtual|vmware|hyper-v|vethernet|docker|wsl|loopback|tailscale|zerotier/i.test(name)) continue;
+    for (const i of list || []) if (i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.')) out.push({ name, address: i.address });
   }
-  return out;
+  const rank = x => (/wi-?fi|wlan|wireless|inal/i.test(x.name) ? 0 : /ethernet|eth|en\d/i.test(x.name) ? 1 : 2) * 10 + (x.address.startsWith('192.168.') ? 0 : x.address.startsWith('10.') ? 1 : 2);
+  return out.sort((a, b) => rank(a) - rank(b)).map(x => x.address);
+}
+
+function writeFirmwareConfig(host) {
+  const fw = path.join(config.ROOT, '..', 'firmware');
+  if (!host || !fs.existsSync(fw)) return [];
+  const body = `#pragma once\n\n#define SERVER_HOST "${host}"\n#define SERVER_PORT ${config.port}\n#define TERMINAL_KEY "${config.terminalKey}"\n`;
+  const done = [];
+  for (const d of ['navi_esp32_pn532', 'navi_esp32_cam']) {
+    const dir = path.join(fw, d);
+    if (!fs.existsSync(dir)) continue;
+    const f = path.join(dir, 'servidor.h');
+    try {
+      if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== body) fs.writeFileSync(f, body);
+      done.push(d);
+    } catch (e) {}
+  }
+  return done;
 }
 
 if (require.main === module) {
@@ -828,6 +885,8 @@ if (require.main === module) {
     for (const ip of ips) console.log(`  En tu red WiFi:  http://${ip}:${config.port}`);
     console.log('');
     console.log(`  Clave de terminal para el firmware: ${config.terminalKey}`);
+    const fw = writeFirmwareConfig(ips[0]);
+    if (fw.length) console.log(`  Firmware listo: la IP ${ips[0]} y la clave ya están en firmware/${fw.join('/servidor.h y firmware/')}/servidor.h`);
     console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : (config.demoMode ? 'no configurado (se simula)' : 'no configurado')} · Telegram: ${config.telegram.token ? 'configurando...' : 'no configurado'}`);
     console.log('');
   });

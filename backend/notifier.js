@@ -34,7 +34,8 @@ const DEFAULTS = {
   wa_phone_id: '',
   wa_template: 'navi_aviso',
   wa_lang: 'es',
-  wa_urgent: true
+  wa_urgent: true,
+  sms_on: false
 };
 const SECRET_KEYS = ['mail_pass', 'wa_token'];
 
@@ -106,6 +107,7 @@ function saveConfig(input) {
   if (input.wa_template !== undefined) next.wa_template = str(input.wa_template, 60).toLowerCase().replace(/[^a-z0-9_]/g, '') || 'navi_aviso';
   if (input.wa_lang !== undefined) next.wa_lang = str(input.wa_lang, 10) || 'es';
   if (typeof input.wa_urgent === 'boolean') next.wa_urgent = input.wa_urgent;
+  if (typeof input.sms_on === 'boolean') next.sms_on = input.sms_on;
   const errors = [];
   if (next.mail_user && !EMAIL_RE.test(next.mail_user)) errors.push(['mail_user', 'El correo que envía no es válido']);
   if (next.inst_email && !validEmails(next.inst_email)) errors.push(['inst_email', 'El correo institucional no es válido']);
@@ -330,6 +332,73 @@ function telegramLink(student) {
   return `https://t.me/${telegramBotName}?start=${telegramLinkCode(student)}`;
 }
 
+let smsSender = () => false;
+let smsDevice = () => null;
+function setSmsSender(send, device) {
+  smsSender = send;
+  if (device) smsDevice = device;
+}
+
+function smsText(m) {
+  const inst = config.institutionName;
+  const parts = [m.lead];
+  if (m.action) parts.push(m.action);
+  const c = getConfig();
+  if (c.inst_phone && m.action) parts.push(`Tel: ${c.inst_phone}`);
+  let t = `N.A.V.I · ${inst}: ${parts.join(' ')}`.replace(/\s+/g, ' ').trim();
+  if (t.length > 300) t = t.slice(0, 297) + '...';
+  return t;
+}
+
+function queueSms(att, s, m, phone, text) {
+  const row = insertLog(att, s, m, 'SMS', `+${phone}`, text, 'PENDIENTE', null);
+  if (smsSender({ id: row.id, phone: `+${phone}`, text })) {
+    db.q("UPDATE notifications SET status = 'ENVIANDO', error = NULL WHERE id = ?").run(row.id);
+    row.status = 'ENVIANDO';
+    onUpdate({ id: row.id, status: 'ENVIANDO', error: null });
+    return { row, online: true };
+  }
+  const err = 'Esperando el celular que envía los SMS';
+  db.q('UPDATE notifications SET error = ? WHERE id = ?').run(err, row.id);
+  row.error = err;
+  onUpdate({ id: row.id, status: 'PENDIENTE', error: err });
+  return { row, online: false };
+}
+
+function smsResult(id, ok, error) {
+  const n = db.q('SELECT * FROM notifications WHERE id = ?').get(Number(id));
+  if (!n || n.channel !== 'SMS' || n.status === 'ENVIADO') return null;
+  const status = ok ? 'ENVIADO' : 'FALLIDO';
+  const err = ok ? null : String(error || 'No se pudo enviar el SMS').slice(0, 200);
+  db.q('UPDATE notifications SET status = ?, error = ? WHERE id = ?').run(status, err, n.id);
+  onUpdate({ id: n.id, status, error: err });
+  return { id: n.id, status };
+}
+
+function smsJobs(hours = 6) {
+  db.q("UPDATE notifications SET status = 'FALLIDO', error = 'El celular no confirmó el envío' WHERE channel = 'SMS' AND status = 'ENVIANDO' AND created_at < datetime('now', '-15 minutes')").run();
+  return db
+    .q("SELECT id, recipient, message FROM notifications WHERE channel = 'SMS' AND status = 'PENDIENTE' AND created_at >= datetime('now', ?) ORDER BY id LIMIT 50")
+    .all(`-${Number(hours) || 6} hours`)
+    .map(n => ({ id: n.id, phone: n.recipient, text: n.message }));
+}
+
+function markSmsSending(id) {
+  db.q("UPDATE notifications SET status = 'ENVIANDO', error = NULL WHERE id = ? AND status = 'PENDIENTE'").run(id);
+  onUpdate({ id, status: 'ENVIANDO', error: null });
+}
+
+async function testSms(phone) {
+  const d = normalizePhone(phone);
+  if (!d) return { ok: false, error: 'El número no parece válido. Usa 09XXXXXXXX o +593…', fields: ['to'] };
+  if (!smsDevice()) return { ok: false, error: 'No hay ningún celular enviando SMS. Activa "Enviar los SMS desde este celular" en la app de Android.' };
+  const s = sampleStudent();
+  const m = compose('ARRIVAL', s, sampleCourse(), { time_recorded: '07:02:00' });
+  const text = `[Prueba] ${smsText(m)}`;
+  const id = `t${Date.now()}`;
+  return smsSender({ id, phone: `+${d}`, text }) ? { ok: true, device: smsDevice() } : { ok: false, error: 'El celular que envía los SMS no respondió' };
+}
+
 function insertLog(att, s, m, channel, recipient, message, status, error) {
   const kind = m.kind;
   const customText = kind === 'CUSTOM' ? m.lead : null;
@@ -423,7 +492,7 @@ function ccFor(kind, c) {
 async function dispatch(kind, s, course, att, custom, channels) {
   const c = getConfig();
   const m = compose(kind, s, course, att, custom);
-  const want = channels || { email: true, telegram: true, whatsapp: 'auto' };
+  const want = channels || { email: true, telegram: true, whatsapp: 'auto', sms: true };
   const results = [];
   let delivered = false;
 
@@ -451,6 +520,15 @@ async function dispatch(kind, s, course, att, custom, channels) {
       delivered = true;
     } catch (e) {
       results.push(insertLog(att, s, m, 'TELEGRAM', s.parent_telegram, m.text, 'FALLIDO', friendlyError(e)));
+    }
+  }
+
+  if (want.sms && c.sms_on && s.parent_phone) {
+    const d = normalizePhone(s.parent_phone);
+    if (d) {
+      const q = queueSms(att, s, m, d, smsText(m));
+      results.push(q.row);
+      if (q.online) delivered = true;
     }
   }
 
@@ -502,7 +580,7 @@ async function sendCustom(studentId, input) {
   if (!text) throw Object.assign(new Error('Escribe el mensaje'), { status: 400, fields: ['text'] });
   const subject = String((input && input.subject) || '').trim().slice(0, 120) || 'Mensaje de la institución';
   const ch = (input && input.channels) || {};
-  const channels = { email: ch.email !== false, telegram: ch.telegram !== false, whatsapp: ch.whatsapp === false ? false : true };
+  const channels = { email: ch.email !== false, telegram: ch.telegram !== false, whatsapp: ch.whatsapp === false ? false : true, sms: ch.sms === true };
   const out = await dispatch('CUSTOM', r.s, r.course, null, { subject, text }, channels);
   return out.results;
 }
@@ -643,11 +721,19 @@ function status() {
     whatsapp: waApiReady(c) ? 'API' : 'LINK',
     wa_urgent: c.wa_urgent,
     telegram: telegramReady && Boolean(telegramBotName),
-    telegramBot: telegramBotName || null
+    telegramBot: telegramBotName || null,
+    sms: Boolean(c.sms_on),
+    sms_device: smsDevice()
   };
 }
 
 module.exports = {
+  setSmsSender,
+  smsResult,
+  smsJobs,
+  markSmsSending,
+  testSms,
+  smsText,
   notify,
   sendCustom,
   preview,
