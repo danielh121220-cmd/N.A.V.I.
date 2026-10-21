@@ -1,4 +1,4 @@
-# N.A.V.I · NFC Attendance & Verification Intelligence
+# N.A.V.I · NFC Attendance & Verification Intelligence 🥀
 
 Pase de lista con tarjetas NFC, avisos automáticos a los representantes y verificación del docente **por excepción**: el profesor solo mira el salón y toca a quien no está.
 
