@@ -209,6 +209,11 @@ app.patch('/api/auth/me', auth.requireUser, wrap((req, res) => {
   res.json({ user: db.q(auth.publicUserSql).get(req.user.id) });
 }));
 
+app.post('/api/auth/tour', auth.requireUser, wrap((req, res) => {
+  db.q("UPDATE users SET tour_at = datetime('now', 'localtime') WHERE id = ?").run(req.user.id);
+  res.json({ ok: true });
+}));
+
 app.post('/api/auth/password', auth.requireUser, wrap((req, res) => {
   const { current, next } = req.body || {};
   const row = db.q('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
@@ -979,8 +984,10 @@ function writeFirmwareConfig(host) {
     const dir = path.join(fw, d);
     if (!fs.existsSync(dir)) continue;
     const f = path.join(dir, 'servidor.h');
+    const mine = path.join(dir, 'mis_datos.h');
     try {
       if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== body) fs.writeFileSync(f, body);
+      if (!fs.existsSync(mine)) fs.writeFileSync(mine, `#pragma once\n\n#define WIFI_SSID "TU_RED_WIFI"\n#define WIFI_PASS "TU_CONTRASENA_WIFI"\n\n#define TERMINAL_ID "ESP32-AULA-1"\n${d === 'navi_esp32_pn532' ? '\n#define PN532_UART 0\n' : ''}`);
       done.push(d);
     } catch (e) {}
   }
@@ -1002,6 +1009,7 @@ if (require.main === module) {
     console.log(`  Clave de terminal para el firmware: ${config.terminalKey}`);
     const fw = writeFirmwareConfig(ips[0]);
     if (fw.length) console.log(`  Firmware listo: la IP ${ips[0]} y la clave ya están en firmware/${fw.join('/servidor.h y firmware/')}/servidor.h`);
+    if (fw.length) console.log('  Tu WiFi y el nombre de cada lector van en mis_datos.h, junto a servidor.h (no se suben a GitHub).');
     console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : (config.demoMode ? 'no configurado (se simula)' : 'no configurado')} · Telegram: ${config.telegram.token ? 'configurando...' : 'no configurado'}`);
     console.log('');
   });

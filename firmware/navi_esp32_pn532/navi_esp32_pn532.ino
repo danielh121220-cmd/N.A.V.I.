@@ -13,7 +13,7 @@
 Adafruit_VL53L0X lox;
 #endif
 
-#define FIRMWARE "lector-3.4"
+#define FIRMWARE "lector-3.5"
 #define QUEUE_FILE "/cola.csv"
 
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -75,6 +75,7 @@ void queueOffline(const String &uid, const String &cred, bool ntag);
 void syncQueue();
 void scanI2C();
 void nfcFlush();
+bool nfcAlive();
 bool startNfc();
 void ping();
 void sendScan(const String &uid, const String &cred, bool ntag);
@@ -578,6 +579,15 @@ void nfcFlush() {
 #endif
 }
 
+bool nfcAlive() {
+  for (int i = 0; i < 4; i++) {
+    delay(i ? 250 : 120);
+    nfcFlush();
+    if (nfc.getFirmwareVersion()) return true;
+  }
+  return false;
+}
+
 bool startNfc() {
 #if PN532_UART
   Serial2.begin(115200, SERIAL_8N1, PIN_PN532_RX, PIN_PN532_TX);
@@ -629,7 +639,7 @@ void setup() {
 #if PN532_UART
     Serial.println("PN532 no detectado (modo UART): switch 1 y 2 en OFF, pin SDA/TXD del PN532 al GPIO 16, pin SCL/RXD al GPIO 17. Luego desconecta y conecta el USB.");
 #else
-    Serial.println("PN532 no detectado (modo I2C): switch 1 en ON y switch 2 en OFF, SDA al GPIO 21, SCL al GPIO 22. Si no aparece, prueba el modo UART: PN532_UART 1 en config.h.");
+    Serial.println("PN532 no detectado (modo I2C): switch 1 en ON y switch 2 en OFF, SDA al GPIO 21, SCL al GPIO 22. Si no aparece, prueba el modo UART: PN532_UART 1 en mis_datos.h.");
 #endif
   }
 #if USE_PRESENCE_SENSOR
@@ -655,7 +665,7 @@ void setup() {
     ping();
     lastPing = millis();
   } else {
-    Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en config.h. El ESP32 solo usa redes de 2.4 GHz.");
+    Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en mis_datos.h. El ESP32 solo usa redes de 2.4 GHz.");
   }
   leds(false, false, false);
   beepOk();
@@ -696,13 +706,12 @@ void loop() {
     }
     return;
   }
-  if (!feedbackUntil && millis() - lastNfcCheck > 20000) {
+  if (!feedbackUntil && millis() - lastNfcCheck > 30000) {
     lastNfcCheck = millis();
-    nfcFlush();
-    if (!nfc.getFirmwareVersion() && (nfcFlush(), !nfc.getFirmwareVersion())) {
+    if (!nfcAlive()) {
       nfcOk = false;
       lastNfcTry = millis();
-      Serial.println("Se perdio la conexion con el PN532: revisa los cables. Lo sigo buscando cada 5 s.");
+      Serial.println("El PN532 dejo de responder (cable flojo o le falta corriente). Lo sigo buscando cada 5 s.");
       leds(false, false, true);
       beepBad();
       drawIdle();

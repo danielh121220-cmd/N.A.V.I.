@@ -55,7 +55,7 @@ Si el Monitor serie dice `PN532 no detectado` aunque los switches y los cables e
 | Pin SDA/TXD del PN532 | **GPIO 16** (RX2) |
 | Pin SCL/RXD del PN532 | **GPIO 17** (TX2) |
 | VCC y GND | Igual que antes |
-| `config.h` | Cambia `#define PN532_UART 0` a `#define PN532_UART 1` y vuelve a subir el programa |
+| `mis_datos.h` | Cambia `#define PN532_UART 0` a `#define PN532_UART 1` y vuelve a subir el programa |
 
 La pantalla OLED sigue en GPIO 21 y 22.
 
@@ -139,8 +139,8 @@ Si cargas el ejemplo *I2C Scanner* deberías ver:
 
 ## 8. Configurar y subir el firmware
 
-1. Arranca el servidor con `INICIAR_NAVI.bat`. Al iniciar, el servidor escribe `servidor.h` en las dos carpetas del firmware con la IP de tu PC, el puerto y la clave de terminal. `config.h` lo usa solo.
-2. En **ambas** carpetas abre `config.h` y escribe solo `WIFI_SSID` y `WIFI_PASS`. Deja el mismo `TERMINAL_ID` en el lector y en la cámara: así el servidor sabe que van juntos.
+1. Arranca el servidor con `INICIAR_NAVI.bat`. Al iniciar, el servidor escribe `servidor.h` en las dos carpetas del firmware con la IP de tu PC, el puerto y la clave de terminal. También crea `mis_datos.h` si no existe. `config.h` usa los dos solo.
+2. En **ambas** carpetas abre `mis_datos.h` y escribe solo `WIFI_SSID` y `WIFI_PASS`. Deja el mismo `TERMINAL_ID` en el lector y en la cámara: así el servidor sabe que van juntos.
 3. En Arduino IDE instala las librerías **Adafruit PN532**, **Adafruit SSD1306**, **Adafruit GFX** y **ArduinoJson** (y **Adafruit VL53L0X** si usas el sensor).
 4. Sube `navi_esp32_pn532.ino` al ESP32 (placa *ESP32 Dev Module*, **Partition Scheme: Huge APP (3MB No OTA/1MB SPIFFS)**, porque con la partición por defecto no cabe) y `navi_esp32_cam.ino` al ESP32-CAM (placa *AI Thinker ESP32-CAM*).
 5. En **Lector → Hardware conectado** deben aparecer el lector y la cámara como "En línea".

@@ -662,7 +662,7 @@
   }
 
   function transition(fn) {
-    if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(fn);
+    if (document.startViewTransition && !document.getElementById('tour') && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(fn);
     else fn();
   }
 
@@ -712,7 +712,7 @@
     connectWS();
     S.view = '';
     route();
-    loadAll();
+    loadAll().catch(() => {}).then(() => { if (S.user && !S.user.tour_at && !noTour()) setTimeout(startTour, 500); });
     const iv = setInterval(() => { if (S.view === 'terminal') loadTerminals(); }, 15000);
     S.timers.push(() => clearInterval(iv));
   }
@@ -993,6 +993,243 @@
   }
 
   const handlers = {};
+
+  const noTour = () => { try { return /[?&]notour/.test(location.search) || sessionStorage.getItem('navi_notour') === '1'; } catch (e) { return false; } };
+
+  function tourSteps() {
+    const admin = isAdmin();
+    const empty = admin && !S.courses.length;
+    const me = (S.user && S.user.avatar) || 'triangle';
+    const name = (NaviBots.CHARACTERS[me] || NaviBots.CHARACTERS.triangle).name;
+    return [
+      { mood: 'happy', title: `¡Hola, ${firstName(S.user.name)}! Soy ${name}`, text: 'Te muestro N.A.V.I en 6 pasos. Menos de un minuto.', ex: 'hello', next: 'Empezar', back: 'Ahora no' },
+      { view: 'inicio', mood: 'neutral', title: 'Inicio', text: 'Aquí ves quién llegó hoy, en vivo.', ex: 'feed' },
+      { view: 'ajustes', mood: 'thinking', title: admin ? 'Tu curso' : S.demo ? 'Cursos y horarios' : 'Tus cursos', text: admin ? 'En Ajustes creas el curso con su hora de entrada.' : S.demo ? 'Cada curso tiene su hora de entrada.' : 'El administrador te los asigna. Solo ves los tuyos.', ex: admin ? 'course' : S.demo ? 'hours' : 'mine' },
+      { view: 'alumnos', mood: 'neutral', title: 'Estudiantes', text: 'Nombre, representante y su tarjeta.', ex: 'student' },
+      { view: 'terminal', mood: 'surprised', title: 'El lector', text: 'Acercan la tarjeta y queda registrado.', ex: 'reader' },
+      { view: 'lista', mood: 'wink', title: 'Pase de lista', text: 'Mira el aula y toca solo a quien falta.', ex: 'roll' },
+      { mood: 'happy', title: 'Los padres se enteran solos', text: 'Les llega un aviso si su hijo llega, se atrasa o falta.', ex: 'notif' },
+      { mood: 'happy', title: '¡Listo!', text: empty ? 'Empieza creando tu primer curso.' : 'Ya puedes usar N.A.V.I.', ex: 'done', next: empty ? 'Crear mi curso' : 'Empezar', final: true, to: empty ? 'course' : 'inicio' }
+    ];
+  }
+
+  function tourEx(k) {
+    const kid = (i, m = 'happy') => `<span class="tx-kid">${NaviBots.svg(mascotKey(i), m)}</span>`;
+    if (k === 'hello') return `<div class="tx-tiles">${[['home', 'blue'], ['calendar', 'red'], ['users', 'orange'], ['nfc', 'graphite'], ['list', 'green'], ['bell', 'pink']].map(([n, c], i) => `<span class="ico ${c}" style="--i:${i}">${icon(n)}</span>`).join('')}</div>`;
+    if (k === 'feed') return `<div class="tx-feed"><div class="tx-row" style="--i:0">${kid(3)}<b>Ana</b><small>07:02</small><span class="pill p-ok">Puntual</span></div><div class="tx-row" style="--i:1">${kid(5)}<b>Luis</b><small>07:16</small><span class="pill p-late">Atraso</span></div></div>`;
+    if (k === 'course') return `<div class="tx-course">${ico('calendar', 'red')}<div><b>3ro BGU B</b><small>Entrada 07:00</small></div><span class="tx-plus">${icon('plus')}</span></div>`;
+    if (k === 'hours') return `<div class="tx-course">${ico('calendar', 'red')}<div><b>3ro BGU B</b><small>Entrada 07:00 · tolerancia 10 min</small></div></div>`;
+    if (k === 'mine') return `<div class="tx-chips"><span class="on" style="--i:0">${icon('check')} 3ro B</span><span class="on" style="--i:1">${icon('check')} 2do A</span><span class="off" style="--i:2">1ro C</span></div>`;
+    if (k === 'student') return `<div class="tx-stu">${kid(0)}<div><b>Ana Pérez</b><small>Rep. María Pérez</small></div><span class="tx-tag">${icon('nfc')}C35AA791</span></div>`;
+    if (k === 'reader') return `<div class="tx-reader"><span class="tx-card">${kid(3)}</span><span class="tx-dev">${icon('nfc')}<i></i></span><span class="tx-ok pill p-ok">${icon('check')} 07:02</span></div>`;
+    if (k === 'roll') return `<div class="tx-roll">${[[3, 'Ana'], [5, 'Luis'], [0, 'Sofía']].map(([m, n], i) => `<span class="tx-seat ${i === 2 ? 'gone' : ''}">${kid(m)}<small>${n}</small></span>`).join('')}<span class="tx-finger"></span></div>`;
+    if (k === 'notif') return `<div class="tx-col"><div class="tx-notif"><span class="tx-app">${NaviBots.svg('triangle', 'happy')}</span><div><b>N.A.V.I</b><small>Ana llegó a clases · 07:02</small></div></div><div class="tx-chans"><span style="--i:0">${icon('mail')} Correo</span><span style="--i:1">${icon('chat')} WhatsApp</span><span style="--i:2">${icon('phone')} SMS</span></div></div>`;
+    if (k === 'done') return `<div class="tx-bots">${NaviBots.KEYS.map((b, i) => `<span style="--i:${i}">${NaviBots.svg(b, i % 2 ? 'wink' : 'happy')}</span>`).join('')}</div>`;
+    return '';
+  }
+
+  let tourEnd = null;
+  function startTour() {
+    if (tourEnd || !S.user || sheetState || $('#tour')) return;
+    const steps = tourSteps();
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const el = document.createElement('div');
+    el.id = 'tour';
+    el.className = 'tour instant';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-label', 'Recorrido de N.A.V.I');
+    el.innerHTML = `<div class="tour-hole"></div><div class="tour-ring"></div>
+      <div class="tour-card"><div class="tour-in">
+        <div class="tour-bot"></div>
+        <button type="button" class="tour-skip" data-t="skip">Saltar</button>
+        <div class="tour-body"><div class="tour-pane"></div></div>
+        <div class="tour-foot"><div class="tour-dots">${steps.slice(1, -1).map(() => '<i></i>').join('')}</div><div class="tour-btns"><button type="button" class="btn btn-plain btn-sm" data-t="back"></button><button type="button" class="btn btn-primary btn-sm" data-t="next"></button></div></div>
+      </div></div>`;
+    document.body.appendChild(el);
+    const hole = el.querySelector('.tour-hole');
+    const ring = el.querySelector('.tour-ring');
+    const card = el.querySelector('.tour-card');
+    const body = el.querySelector('.tour-body');
+    const pane = el.querySelector('.tour-pane');
+    const btnNext = el.querySelector('[data-t=next]');
+    const btnBack = el.querySelector('[data-t=back]');
+    const btnSkip = el.querySelector('[data-t=skip]');
+    const dots = [...el.querySelectorAll('.tour-dots i')];
+    const bot = NaviBots.mount(el.querySelector('.tour-bot'), { character: (S.user && S.user.avatar) || 'triangle', follow: false });
+    let i = 0, box = null, typing = 0, swapT = 0, placeT = 0, raf = 0, closed = false;
+
+    const target = view => {
+      const all = [...root.querySelectorAll(`[data-nav="${view}"]`)].filter(b => !b.closest('.side-foot'));
+      return all.find(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) || null;
+    };
+
+    const say = text => {
+      cancelAnimationFrame(typing);
+      const vis = pane.querySelector('.tour-say .v');
+      const ghost = pane.querySelector('.tour-say .g');
+      if (!vis) return;
+      if (reduce) { vis.textContent = text; ghost.textContent = ''; return; }
+      const t0 = performance.now();
+      const tick = now => {
+        const n = Math.min(text.length, Math.round((now - t0) / 16));
+        vis.textContent = text.slice(0, n);
+        ghost.textContent = text.slice(n);
+        if (n < text.length) typing = requestAnimationFrame(tick);
+      };
+      typing = requestAnimationFrame(tick);
+    };
+
+    const place = cardH => {
+      const s = steps[i];
+      const vw = innerWidth, vh = innerHeight;
+      const cw = card.offsetWidth;
+      const ch = cardH || card.offsetHeight;
+      const t = s.view ? target(s.view) : null;
+      let x, y;
+      if (t) {
+        const r = t.getBoundingClientRect();
+        const pad = 6, gap = 22;
+        box = { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
+        if (r.left < vw * 0.3 && vw - (box.x + box.w) >= cw + gap + 16) { x = box.x + box.w + gap; y = r.top + r.height / 2 - ch / 2; }
+        else if (r.top + r.height / 2 > vh / 2) { x = r.left + r.width / 2 - cw / 2; y = box.y - gap - ch; }
+        else { x = r.left + r.width / 2 - cw / 2; y = box.y + box.h + gap + 30; }
+        const cx = r.left + r.width / 2 - (Math.max(16, Math.min(vw - cw - 16, x)) + cw / 2);
+        const cy = r.top + r.height / 2 - (y + 10);
+        const d = Math.hypot(cx, cy) || 1;
+        bot.look(cx / d, cy / d);
+      } else {
+        box = null;
+        x = vw / 2 - cw / 2;
+        y = vh / 2 - ch / 2 + 16;
+        bot.look(null);
+      }
+      x = Math.max(16, Math.min(vw - cw - 16, x));
+      y = Math.max(46, Math.min(vh - ch - 16, y));
+      card.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+      const b = box || { x: vw / 2, y: vh / 2, w: 0, h: 0 };
+      for (const n of [hole, ring]) {
+        n.style.transform = `translate3d(${Math.round(b.x)}px, ${Math.round(b.y)}px, 0)`;
+        n.style.width = Math.round(b.w) + 'px';
+        n.style.height = Math.round(b.h) + 'px';
+      }
+      ring.classList.toggle('on', Boolean(box));
+    };
+
+    const fill = () => {
+      const s = steps[i];
+      pane.innerHTML = `<h3>${esc(s.title)}</h3><p class="tour-say"><span class="v"></span><span class="g">${esc(s.text)}</span></p><div class="tour-ex">${tourEx(s.ex)}</div>`;
+      btnNext.textContent = s.next || 'Siguiente';
+      btnBack.textContent = s.back || 'Atrás';
+      btnBack.classList.toggle('hidden', !!s.final);
+      btnSkip.classList.toggle('hidden', i === 0 || !!s.final);
+      dots.forEach((d, n) => { d.classList.toggle('on', n === i - 1); d.classList.toggle('done', n < i - 1); });
+      el.querySelector('.tour-dots').classList.toggle('hidden', i === 0 || !!s.final);
+      bot.setBase(s.mood);
+      const oldH = body.offsetHeight;
+      body.style.height = 'auto';
+      const newH = pane.offsetHeight;
+      body.style.height = oldH + 'px';
+      void body.offsetHeight;
+      body.style.height = newH + 'px';
+      return card.offsetHeight - oldH + newH;
+    };
+
+    const show = n => {
+      if (closed) return;
+      const s = steps[n];
+      clearTimeout(swapT);
+      clearTimeout(placeT);
+      const moved = s.view && S.view !== s.view;
+      if (moved) go(s.view);
+      const first = !box && n === 0 && !el.classList.contains('on');
+      i = n;
+      if (first) {
+        place(fill());
+        say(s.text);
+        requestAnimationFrame(() => requestAnimationFrame(() => { el.classList.remove('instant'); el.classList.add('on'); }));
+        return;
+      }
+      pane.classList.add('swap');
+      SFX.play('tap');
+      swapT = setTimeout(() => {
+        const h = fill();
+        place(h);
+        pane.classList.remove('swap');
+        say(s.text);
+        if (s.final) { SFX.play('success'); if (!reduce) confetti(el.querySelector('.tour-in'), ['#FFD60A', '#34C759', '#0A84FF', '#FF375F', '#AF52DE']); }
+        if (moved) placeT = setTimeout(() => place(), 380);
+      }, reduce ? 0 : 150);
+    };
+
+    const finish = done => {
+      if (closed) return;
+      closed = true;
+      tourEnd = null;
+      cancelAnimationFrame(typing);
+      cancelAnimationFrame(raf);
+      clearTimeout(swapT);
+      clearTimeout(placeT);
+      removeEventListener('resize', onResize);
+      removeEventListener('keydown', onKey, true);
+      S.user.tour_at = S.user.tour_at || new Date().toISOString();
+      api('/auth/tour', { method: 'POST', body: {} }).catch(() => {});
+      el.classList.add('out');
+      setTimeout(() => { bot.destroy(); el.remove(); }, reduce ? 0 : 340);
+      const s = steps[i];
+      if (done && s.to === 'course') {
+        go('ajustes');
+        setTimeout(() => {
+          const f = $('#newCourse');
+          if (!f) return;
+          f.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+          setTimeout(() => { const inp = f.querySelector('[name=name]'); if (inp) inp.focus({ preventScroll: true }); }, 450);
+        }, 420);
+      } else if (i > 0 && S.view !== 'inicio') go('inicio');
+      if (!done && i < steps.length - 1) setTimeout(() => toast({ title: 'Cuando quieras', text: 'Ajustes → Ver el recorrido', mood: 'wink', ms: 2600 }), 380);
+    };
+
+    const next = () => (steps[i].final ? finish(true) : show(i + 1));
+    const back = () => (i === 0 ? finish(false) : show(i - 1));
+    const onResize = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => place()); };
+    const onKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); next(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
+      e.stopPropagation();
+    };
+
+    btnNext.addEventListener('click', e => { e.stopPropagation(); next(); });
+    btnBack.addEventListener('click', e => { e.stopPropagation(); back(); });
+    btnSkip.addEventListener('click', e => { e.stopPropagation(); finish(false); });
+    card.addEventListener('click', e => {
+      e.stopPropagation();
+      const v = pane.querySelector('.tour-say .v');
+      if (v && pane.querySelector('.tour-say .g').textContent) { cancelAnimationFrame(typing); v.textContent = steps[i].text; pane.querySelector('.tour-say .g').textContent = ''; }
+    });
+    el.addEventListener('click', e => {
+      if (box && e.clientX >= box.x && e.clientX <= box.x + box.w && e.clientY >= box.y && e.clientY <= box.y + box.h) next();
+      else bot.mood('surprised', 650);
+    });
+    el.addEventListener('wheel', e => e.preventDefault(), { passive: false });
+    el.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    let sx = null;
+    card.addEventListener('touchstart', e => { sx = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+    card.addEventListener('touchend', e => {
+      if (sx == null) return;
+      const dx = e.changedTouches[0].clientX - sx;
+      sx = null;
+      if (Math.abs(dx) > 60) dx < 0 ? next() : i > 0 && back();
+    });
+    addEventListener('resize', onResize);
+    addEventListener('keydown', onKey, true);
+    tourEnd = () => finish(false);
+    S.timers.push(() => { if (tourEnd) { closed = true; tourEnd = null; bot.destroy(); el.remove(); removeEventListener('resize', onResize); removeEventListener('keydown', onKey, true); } });
+    show(0);
+    btnNext.focus({ preventScroll: true });
+  }
+  handlers.tour = () => startTour();
+
   function onAction(e) {
     const el = e.target.closest('[data-act]');
     if (!el || !$('#main').contains(el)) return;
@@ -2471,7 +2708,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
             <div class="group"><div style="padding:14px 16px">
               <div class="code" id="fwCfg">#define SERVER_HOST "${esc(host)}"\n#define SERVER_PORT ${esc(port)}\n#define TERMINAL_KEY "${isAdmin() ? '…' : 'pídela al administrador'}"\n#define TERMINAL_ID "ESP32-AULA-1"</div>
             </div>${isAdmin() ? `<button class="cell center" data-act="copyCfg">Copiar configuración</button>` : ''}</div>
-            <p class="group-foot">El servidor ya guarda la IP y la clave en <span class="mono">servidor.h</span>, dentro de las dos carpetas del firmware. Solo escribe el nombre y la clave de tu WiFi en <span class="mono">config.h</span> y sube el programa. El ESP32 y esta PC deben estar en la misma red WiFi.</p>
+            <p class="group-foot">El servidor ya guarda la IP y la clave en <span class="mono">servidor.h</span>, dentro de las dos carpetas del firmware. Solo escribe tu WiFi y el nombre del lector en <span class="mono">mis_datos.h</span> y sube el programa. El ESP32 y esta PC deben estar en la misma red WiFi.</p>
             ${sim ? `
             <div class="group-title">Preparar una demostración</div>
             <div class="group">
@@ -2565,7 +2802,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
       }
     });
   };
-  handlers.copyCfg = () => copyText($('#fwCfg').textContent, 'Pégalo en config.h de los firmwares.');
+  handlers.copyCfg = () => copyText($('#fwCfg').textContent, 'Ya está en servidor.h. Solo hace falta si lo pones a mano.');
   handlers.camToggle = async el => {
     if (el.checked) {
       try {
@@ -2727,8 +2964,9 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
               ${window.NaviAndroid && window.NaviAndroid.getServer() ? `<button class="cell has-icon" data-act="nativeServer">${ico('cpu', 'graphite')}<div class="grow"><div class="t">Servidor del colegio</div><div class="s">${esc(window.NaviAndroid.getServer().replace(/^https?:\/\//, ''))}</div></div><span class="v">Cambiar</span>${icon('chevron', 'chev')}</button>` : ''}
               <div class="cell has-icon">${ico('phone', 'indigo')}<div class="grow"><div class="t">App en este dispositivo</div><div class="s" style="white-space:normal">${installSub}</div></div>${S.installPrompt ? `<button class="btn btn-primary btn-sm" data-act="install">Instalar</button>` : standalone ? '<span class="pill p-ok">Instalada</span>' : ''}</div>
             </div>
+            <div class="group" style="margin-top:26px"><button class="cell has-icon" data-act="tour">${ico('wand', 'purple')}<div class="grow"><div class="t">Ver el recorrido</div><div class="s">Tu bot te enseña la app en un minuto</div></div>${icon('chevron', 'chev')}</button></div>
             <div class="group" style="margin-top:26px"><button class="cell center danger" data-act="logout">Cerrar sesión</button></div>
-            <p class="group-foot" style="text-align:center;margin-top:10px">N.A.V.I 3.3</p>
+            <p class="group-foot" style="text-align:center;margin-top:10px">N.A.V.I 3.10</p>
           </div>
         </div>`;
     },

@@ -196,7 +196,7 @@ void setup() {
     ping();
     lastPing = millis();
   } else {
-    Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en config.h. Solo redes de 2.4 GHz.");
+    Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en mis_datos.h. Solo redes de 2.4 GHz.");
   }
   Serial.println("Para probar sin el lector, escribe f en el Monitor serie y presiona Enter: toma una foto.");
 }

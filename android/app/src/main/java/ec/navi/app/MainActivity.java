@@ -47,7 +47,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private static final int FILE_REQUEST = 42;
     private static final int SMS_REQUEST = 77;
     private static final String SMS_SENT = "ec.navi.app.SMS_SENT";
-    private static final String VERSION = "3.9";
+    private static final String VERSION = "3.10";
 
     private WebView web;
     private NfcAdapter nfc;

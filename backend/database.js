@@ -187,6 +187,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS course_teachers (
 )`);
 addColumns('terminals', [['course_id', 'INTEGER'], ['label', 'TEXT']]);
 addColumns('attendances', [['other_room', 'INTEGER NOT NULL DEFAULT 0']]);
+addColumns('users', [['tour_at', 'TEXT']]);
 
 const MASCOT_COUNT = 40;
 function nextMascot(courseId, exceptId) {

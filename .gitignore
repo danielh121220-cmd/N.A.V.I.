@@ -9,3 +9,4 @@ tools/video/audio.wav
 tools/video/node_modules/
 backend/data-demo/
 firmware/*/servidor.h
+firmware/*/mis_datos.h

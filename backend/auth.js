@@ -40,7 +40,7 @@ function readToken(token) {
   return Number(parts[0]);
 }
 
-const publicUserSql = 'SELECT id, name, email, role, institution_name, avatar, created_at FROM users WHERE id = ?';
+const publicUserSql = 'SELECT id, name, email, role, institution_name, avatar, tour_at, created_at FROM users WHERE id = ?';
 
 function userFromRequest(req) {
   const header = req.headers.authorization || '';

@@ -6,13 +6,13 @@ Pase de lista con tarjetas NFC, avisos automáticos a los representantes y verif
 
 1. Instala **Node.js LTS** si no lo tienes: https://nodejs.org/es
 2. Elige cómo abrirlo:
-   - **`INICIAR_NAVI.bat`**: el sistema real del colegio. Empieza vacío: la primera cuenta que crees es la del administrador, y la app te guía con **Primeros pasos** (curso, estudiantes, lector y tarjetas).
+   - **`INICIAR_NAVI.bat`**: el sistema real del colegio. Empieza vacío: la primera cuenta que crees es la del administrador. Tu bot te da un recorrido de un minuto y luego la app te guía con **Primeros pasos** (curso, estudiantes, lector y tarjetas).
    - **`INICIAR_NAVI_DEMO.bat`**: la demostración, con estudiantes de ejemplo, la cuenta demo y el simulador del lector. Usa su propia base de datos (`backend/data-demo`), así que nunca se mezcla con la real.
 3. La primera vez instala lo necesario y abre el navegador en `http://localhost:3000`.
 
 Para todo un colegio (un lector por aula y cada docente viendo solo sus cursos), lee [`docs/VARIOS_LECTORES_Y_CURSOS.md`](docs/VARIOS_LECTORES_Y_CURSOS.md).
 
-Para probar con el lector real (ESP32 + PN532), sigue [`PROBAR_CON_LOS_MODULOS.md`](PROBAR_CON_LOS_MODULOS.md): el servidor deja lista la IP y la clave en el firmware y solo escribes tu WiFi.
+Para probar con el lector real (ESP32 + PN532), sigue [`PROBAR_CON_LOS_MODULOS.md`](PROBAR_CON_LOS_MODULOS.md): el servidor deja lista la IP y la clave en el firmware y solo escribes tu WiFi en `mis_datos.h`.
 
 En la app de Android, escribe **12122008** en el campo del servidor y toca **Conectar**: se abre la demostración completa dentro del celular, sin servidor.
 
@@ -26,7 +26,7 @@ Para instalarla como app en la PC o en el celular, lee [`docs/INSTALAR_APP.md`](
 | Cámara (ESP32-CAM) | Toma una foto en el momento del toque. Si la foto sale negra (cámara tapada) el registro queda para revisión. |
 | Servidor (Node.js + SQLite) | Clasifica puntual / atraso, marca ausentes al pasar el límite, detecta señales raras y avisa a los representantes. |
 | Ficha médica de emergencia | Alergias, condiciones, medicamentos y contactos. Cualquier persona que acerque su celular a la tarjeta del estudiante ve qué hacer; el colegio y el representante reciben un aviso. |
-| App web instalable | Diseño estilo iOS (claro y oscuro), panel en vivo con anillos tipo Apple Fitness, pase de lista por excepción, revisión con fotos, estudiantes, simulador de terminal, reportes CSV y ajustes. |
+| App web instalable | Diseño estilo iOS (claro y oscuro), panel en vivo con anillos tipo Apple Fitness, pase de lista por excepción, revisión con fotos, estudiantes, simulador de terminal, reportes CSV y ajustes. Cada cuenta nueva recibe un recorrido guiado por su bot. |
 
 ### Cómo enfrenta el "amigo que pasa la tarjeta"
 
@@ -52,7 +52,7 @@ proyecto con pn532/
 │   ├── attendance.js           Asistencia, ausencias, revisión y cámara
 │   ├── pet.js / student.js     Mascotas, corazones y cuenta del estudiante
 │   ├── credential.js           Credencial firmada que se graba en la tarjeta
-│   ├── notifier.js             Correo, Telegram y enlaces de WhatsApp
+│   ├── notifier.js             Correo, SMS, Telegram y enlaces de WhatsApp
 │   ├── database.js / sqlite.js Esquema y base de datos SQLite integrada en Node
 │   ├── data/ y data-demo/      Datos reales y de la demostración (se crean solos)
 │   └── public/                 App web instalable (PWA)
@@ -65,6 +65,6 @@ proyecto con pn532/
 
 ## Notas
 
-- La base de datos nueva está en `backend/data/navi.sqlite`. La antigua (`backend/navi_database.sqlite`) quedó intacta como respaldo, pero ya no se usa.
+- La base de datos está en `backend/data/navi.sqlite`. Ni ella, ni las fotos, ni `mis_datos.h` (tu WiFi) ni `servidor.h` (la clave de terminal) se suben a GitHub.
 - La clave de terminal se genera sola y aparece en la ventana del servidor y en **Lector → Configuración del firmware** (solo para el administrador). Es la misma en el modo real y en la demostración, así que el lector funciona con los dos.
 - El modo demostración también se activa con `NAVI_DEMO=1` en `backend/.env`.

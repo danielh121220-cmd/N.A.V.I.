@@ -52,12 +52,14 @@ Si la IP de tu PC cambia (otro WiFi, otro día), vuelve a abrir `INICIAR_NAVI.ba
 ## 4. Sube el programa del lector
 
 1. Abre `firmware/navi_esp32_pn532/navi_esp32_pn532.ino`.
-2. En la pestaña **config.h** cambia solo estas dos líneas:
+2. En la pestaña **mis_datos.h** (la crea sola `INICIAR_NAVI.bat`) cambia estas dos líneas:
 
    ```
    #define WIFI_SSID "NOMBRE_DE_TU_WIFI"
    #define WIFI_PASS "CLAVE_DE_TU_WIFI"
    ```
+
+   `mis_datos.h` y `servidor.h` no se suben a GitHub: la clave de tu WiFi se queda solo en tu PC.
 
 3. Placa: **ESP32 Dev Module**. Puerto: el COM que aparece al conectar el ESP32.
    En **Herramientas → Partition Scheme** elige **Huge APP (3MB No OTA/1MB SPIFFS)**. Con la opción por defecto el programa no cabe ("Sketch too big").
@@ -81,7 +83,7 @@ El cable **GPIO 25 del lector → GPIO 13 de la cámara** (con GND común) es op
 
 **Subir el programa**
 
-1. Abre `firmware/navi_esp32_cam/navi_esp32_cam.ino` y escribe tu WiFi en su `config.h` (la IP y la clave ya están en `servidor.h`).
+1. Abre `firmware/navi_esp32_cam/navi_esp32_cam.ino` y escribe tu WiFi en su `mis_datos.h` (la IP y la clave ya están en `servidor.h`).
 2. Placa: **AI Thinker ESP32-CAM** (grupo *esp32*). Revisa que **PSRAM** esté en *Enabled* y la partición en *Huge APP*.
 3. Para subir:
    - **Con la placa base ESP32-CAM-MB** (la que trae USB): conéctala y sube. Si se queda en "Connecting…", mantén presionado **IO0** y toca **RST**.
@@ -107,7 +109,7 @@ El cable **GPIO 25 del lector → GPIO 13 de la cámara** (con GND común) es op
 | --- | --- |
 | `Sketch too big` o `text section exceeds available space` | **Herramientas → Partition Scheme → Huge APP (3MB No OTA/1MB SPIFFS)** y vuelve a subir. |
 | `PN532 no detectado` | Pon el switch 1 en ON y el switch 2 en OFF (modo I2C) y revisa SDA y SCL. Desconecta y vuelve a conectar la alimentación. |
-| Sigue `PN532 no detectado` y `Modulos I2C encontrados: ninguno` | Usa el **modo UART**: switches 1 y 2 en OFF, el pin SDA/TXD del PN532 al GPIO 16, el pin SCL/RXD al GPIO 17, y en `config.h` pon `#define PN532_UART 1` (si no está esa línea, agrégala). |
+| Sigue `PN532 no detectado` y `Modulos I2C encontrados: ninguno` | Usa el **modo UART**: switches 1 y 2 en OFF, el pin SDA/TXD del PN532 al GPIO 16, el pin SCL/RXD al GPIO 17, y en `mis_datos.h` pon `#define PN532_UART 1`. |
 | La OLED no enciende | Revisa que esté en 3.3V y no en 5V. Su dirección debe ser 0x3C. |
 | `Clave de terminal incorrecta` | Abre `INICIAR_NAVI.bat` en la PC y vuelve a subir el programa, para que tome el `servidor.h` nuevo. |
 | El lector no aparece **En línea** | La PC y el ESP32 no están en la misma red, o el Firewall de Windows bloquea Node.js: permite el acceso en redes privadas. |

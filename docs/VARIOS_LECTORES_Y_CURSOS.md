@@ -17,7 +17,7 @@
 
 ## 1. Programar varios lectores
 
-Todos los lectores usan **el mismo programa**. Solo cambia una línea de `config.h`:
+Todos los lectores usan **el mismo programa**. Solo cambia una línea de `mis_datos.h`:
 
 ```
 #define TERMINAL_ID "AULA-3B"
@@ -37,7 +37,7 @@ Todos los lectores usan **el mismo programa**. Solo cambia una línea de `config
 Pasos para cada lector nuevo:
 
 1. Abre `firmware/navi_esp32_pn532/navi_esp32_pn532.ino`.
-2. Cambia `TERMINAL_ID` en `config.h` y guarda.
+2. Cambia `TERMINAL_ID` en `mis_datos.h` y guarda.
 3. Sube el programa a ese ESP32 (placa *ESP32 Dev Module*, partición *Huge APP*).
 4. Pégale una etiqueta con su nombre para no confundirlos.
 5. Repite con su cámara, con el mismo nombre.
