@@ -10,14 +10,27 @@ android {
         applicationId "ec.navi.app"
         minSdk 24
         targetSdk 34
-        versionCode 4
-        versionName "3.3"
+        versionCode 5
+        versionName "3.4"
+    }
+
+    signingConfigs {
+        prueba {
+            storeFile file("navi-prueba.p12")
+            storePassword "navi2026"
+            keyAlias "navi"
+            keyPassword "navi2026"
+            storeType "pkcs12"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.prueba
+        }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.prueba
         }
     }
 

@@ -1,9 +1,13 @@
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const config = require('./config');
 const { db, getSettings } = require('./database');
 const { notify } = require('./notifier');
 const C = require('./credential');
+const M = require('./mascot');
+const ST = require('./student');
+const P = require('./pet');
 const T = require('./time');
 
 const SNAP_DIR = path.join(config.DATA_DIR, 'snapshots');
@@ -22,6 +26,99 @@ function disarmEmergency() {
 }
 function setBroadcast(fn) {
   broadcast = fn;
+}
+
+let writeArm = null;
+let writeBuilder = null;
+function setWriteBuilder(fn) {
+  writeBuilder = fn;
+}
+function armWrite(studentId, userId, assign, seconds = 90) {
+  writeArm = { studentId, userId, assign: Boolean(assign), until: Date.now() + seconds * 1000, job: crypto.randomBytes(6).toString('hex') };
+  return { job: writeArm.job, until: new Date(writeArm.until).toISOString(), assign: writeArm.assign };
+}
+function disarmWrite() {
+  writeArm = null;
+}
+const writeActive = () => Boolean(writeArm && Date.now() < writeArm.until);
+function writeDone(job, uid, ok, error) {
+  if (!writeArm || writeArm.job !== job) return false;
+  const sid = writeArm.studentId;
+  if (ok) writeArm = null;
+  broadcast('card_written', { student_id: sid, ok: Boolean(ok), uid: uid || null, error: ok ? null : String(error || 'No se pudo grabar').slice(0, 120) });
+  return true;
+}
+
+function handleWrite(student, uid, ntag, simulated) {
+  const target = db.q('SELECT * FROM students WHERE id = ? AND active = 1').get(writeArm.studentId);
+  if (!target) {
+    writeArm = null;
+    return null;
+  }
+  const name = ascii(target.first_name).toUpperCase().slice(0, 14);
+  const fail = (l1, l2, why) => {
+    broadcast('card_written', { student_id: target.id, ok: false, uid, error: why });
+    return { code: 200, body: { status: 'ERROR_GRABAR', display: { line1: l1, line2: l2 } } };
+  };
+  if (student && student.id !== target.id) return null;
+  if (!student && !writeArm.assign) return null;
+  if (!simulated && !ntag) return fail('USE TARJETA', 'NTAG213 O NTAG215', 'Esta tarjeta no es NTAG: sirve para asistencia, pero no guarda la credencial');
+  if (!student) {
+    const old = db.q('SELECT id FROM students WHERE nfc_uid = ? AND active = 0').get(uid);
+    if (old) db.q("UPDATE students SET nfc_uid = nfc_uid || '-OLD' || id WHERE id = ?").run(old.id);
+    db.q('UPDATE students SET nfc_uid = ?, card_ver = card_ver + 1 WHERE id = ?').run(uid, target.id);
+    broadcast('student', { id: target.id });
+  }
+  const fresh = db.q('SELECT * FROM students WHERE id = ?').get(target.id);
+  const built = writeBuilder ? writeBuilder(fresh) : null;
+  if (!built) return fail('ERROR', 'DEL SERVIDOR', 'No se pudo preparar la credencial');
+  let ndef;
+  try {
+    ndef = C.ndefHex(built.url, built.cred);
+  } catch (e) {
+    return fail('DATOS MUY', 'GRANDES', e.message);
+  }
+  if (simulated) {
+    writeDone(writeArm.job, uid, true);
+    return { code: 200, body: { status: 'GRABADO', student_name: `${fresh.first_name} ${fresh.last_name}`, display: { line1: 'TARJETA', line2: 'GRABADA' } } };
+  }
+  return { code: 200, body: { status: 'GRABAR', job: writeArm.job, ndef, cred: built.cred, student_name: `${fresh.first_name} ${fresh.last_name}`, display: { line1: 'GRABANDO', line2: name } } };
+}
+
+function mascotPart(student, happy) {
+  if (student.mascot == null || student.mascot_dead_on) return {};
+  return { mascot: M.bitmap(student.mascot, happy ? 'happy' : 'neutral'), mascot_index: student.mascot, mascot_name: student.mascot_name || M.name(student.mascot) };
+}
+
+function petName(s) {
+  return ascii(s.mascot_name || M.name(s.mascot)).toUpperCase().slice(0, 9);
+}
+
+function tapResult(studentId, base, src, opts = {}) {
+  let s = db.q('SELECT * FROM students WHERE id = ?').get(studentId);
+  if (src === 'OFFLINE') return { display: base, code: null, extra: mascotPart(s, opts.happy) };
+  let first = false;
+  if (s.mascot_dead_on && ST.needsCode(s)) {
+    const r = P.adopt(s.id);
+    if (!r.error) {
+      s = db.q('SELECT * FROM students WHERE id = ?').get(studentId);
+      broadcast('mascot_adopted', { student_id: s.id, mascot: s.mascot, auto: true });
+      first = true;
+    }
+  }
+  if (s.mascot_dead_on) return { display: { line1: base.line1, line2: 'ELIGE MASCOTA' }, code: null, extra: {}, gone: true };
+  if (!s.mascot_unlocked) {
+    db.q('UPDATE students SET mascot_unlocked = 1 WHERE id = ?').run(s.id);
+    broadcast('mascot_unlocked', { student_id: s.id });
+    first = true;
+  }
+  const code = ST.needsCode(s) ? ST.issueCode(s.id) : null;
+  let d = { ...base };
+  if (first) d = { line1: `NACIO ${petName(s)}!`, line2: code ? 'CODIGO APP:' : 'ABRE LA APP' };
+  else if (code) d = { line1: base.line1, line2: 'CODIGO APP:' };
+  else if (opts.saved) d = { line1: base.line1, line2: 'ME SALVASTE!' };
+  if (code) d.line3 = code;
+  return { display: d, code, first, extra: mascotPart(s, opts.happy || first || opts.saved) };
 }
 
 const lastSnapshots = new Map();
@@ -62,7 +159,10 @@ function listPendingReview() {
 
 function emitRecord(id) {
   const r = getRecord(id);
-  if (r) broadcast('attendance', r);
+  if (r) {
+    broadcast('attendance', r);
+    P.check(r.student_id);
+  }
   return r;
 }
 
@@ -154,7 +254,7 @@ function display(status, student, time, review) {
   return { line1: '', line2: '' };
 }
 
-function scan({ uid, terminalId = 'ESP32-AULA-1', ts = null, presenceId = null, snapshotBuffer = null, source = 'NFC', cred = null, ntag = false }) {
+function scan({ uid, terminalId = 'ESP32-AULA-1', ts = null, presenceId = null, snapshotBuffer = null, source = 'NFC', cred = null, ntag = false, simulated = false }) {
   const cleanUid = String(uid || '').toUpperCase().replace(/[^0-9A-F]/g, '');
   if (!cleanUid) return { code: 400, body: { error: 'UID vacío' } };
 
@@ -173,12 +273,16 @@ function scan({ uid, terminalId = 'ESP32-AULA-1', ts = null, presenceId = null, 
   if (source === 'OFFLINE' && !validTs) return { code: 422, body: { status: 'FUERA_DE_RANGO' } };
 
   const held = lastTapByTerminal.get(terminalId);
-  if (src !== 'OFFLINE' && !(emergencyArm && Date.now() < emergencyArm.until) && held && held.uid === cleanUid && when.getTime() - held.at < 4000) {
+  if (src !== 'OFFLINE' && !(emergencyArm && Date.now() < emergencyArm.until) && !writeActive() && held && held.uid === cleanUid && when.getTime() - held.at < 4000) {
     return { code: 200, body: { status: 'REPETIDO', display: display('REPETIDO') } };
   }
   if (src !== 'OFFLINE') lastTapByTerminal.set(terminalId, { uid: cleanUid, at: when.getTime() });
 
   const student = db.q('SELECT * FROM students WHERE nfc_uid = ? AND active = 1').get(cleanUid);
+  if (writeActive() && src !== 'OFFLINE') {
+    const w = handleWrite(student, cleanUid, ntag, simulated);
+    if (w) return w;
+  }
   if (!student) {
     broadcast('unknown_card', { uid: cleanUid, terminal_id: terminalId, at: when.toISOString() });
     return { code: 404, body: { status: 'DESCONOCIDO', uid: cleanUid, display: display('DESCONOCIDO') } };
@@ -202,9 +306,11 @@ function scan({ uid, terminalId = 'ESP32-AULA-1', ts = null, presenceId = null, 
 
   if (existing && existing.status !== 'AUSENTE') {
     broadcast('duplicate', { student_name: `${student.first_name} ${student.last_name}`, first_time: existing.time_recorded, terminal_id: terminalId });
-    return { code: 200, body: { status: 'DUPLICADO', student_name: `${student.first_name} ${student.last_name}`, time: existing.time_recorded, display: display('DUPLICADO', student, existing.time_recorded) } };
+    const t = tapResult(student.id, display('DUPLICADO', student, existing.time_recorded), src);
+    return { code: 200, body: { status: 'DUPLICADO', student_name: `${student.first_name} ${student.last_name}`, time: existing.time_recorded, login_code: t.code, display: t.display, ...t.extra } };
   }
 
+  const before = P.absenceRun(student).n;
   let attId;
   let status;
   if (existing) {
@@ -248,6 +354,7 @@ function scan({ uid, terminalId = 'ESP32-AULA-1', ts = null, presenceId = null, 
 
   const record = emitRecord(attId);
   const review = record.review_state === 'PENDIENTE';
+  const t = tapResult(student.id, display(status, student, time, review), src, { happy: status === 'A_TIEMPO' && !review, saved: before >= 2 && !review });
   return {
     code: 200,
     body: {
@@ -256,7 +363,10 @@ function scan({ uid, terminalId = 'ESP32-AULA-1', ts = null, presenceId = null, 
       student_name: record.student_name,
       time,
       review,
-      display: display(status, student, time, review)
+      login_code: t.code,
+      mascot_gone: Boolean(t.gone),
+      display: t.display,
+      ...t.extra
     }
   };
 }
@@ -420,6 +530,10 @@ function stats(date) {
 
 module.exports = {
   justify,
+  armWrite,
+  disarmWrite,
+  writeDone,
+  setWriteBuilder,
   armEmergency,
   disarmEmergency,
   SNAP_DIR,

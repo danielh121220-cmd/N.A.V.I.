@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Navi" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/navi_bg</item>
+        <item name="android:statusBarColor">@color/navi_bg</item>
+        <item name="android:navigationBarColor">@color/navi_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#007AFF</item>
+    </style>
+    <color name="navi_bg">#F2F2F7</color>
+</resources>

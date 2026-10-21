@@ -1,0 +1,1 @@
+window.META={"ph_portal": "#f2f2f7", "ph_egg": "#f2f2f7", "ph_born": "#f2f2f7", "ph_sick": "#f2f2f7", "ph_gone": "#f2f2f7", "ph_ficha": "#ff3b30", "ph_code": "#a4a4a7"};

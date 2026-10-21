@@ -13,7 +13,7 @@
 Adafruit_VL53L0X lox;
 #endif
 
-#define FIRMWARE "lector-3.1"
+#define FIRMWARE "lector-3.2"
 #define QUEUE_FILE "/cola.csv"
 
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -104,7 +104,31 @@ void drawIdle() {
 }
 
 void feedback(const String &status, bool review, const String &l1, const String &l2) {
-  if (status == "A_TIEMPO" && !review) {
+  alertFor(status, review);
+  oled(l1, l2, "");
+  feedbackUntil = millis() + 1300;
+}
+
+int hexNibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  return -1;
+}
+
+int hexToBytes(const char *hex, uint8_t *out, int maxLen) {
+  int n = 0;
+  for (int i = 0; hex[i] && hex[i + 1] && n < maxLen; i += 2) {
+    int hi = hexNibble(hex[i]);
+    int lo = hexNibble(hex[i + 1]);
+    if (hi < 0 || lo < 0) return -1;
+    out[n++] = (hi << 4) | lo;
+  }
+  return n;
+}
+
+void alertFor(const String &status, bool review) {
+  if ((status == "A_TIEMPO" && !review) || status == "GRABADO") {
     leds(true, false, false);
     beepOk();
   } else if (status == "A_TIEMPO" || status == "TARDE" || status == "DUPLICADO" || status == "OFFLINE") {
@@ -114,8 +138,90 @@ void feedback(const String &status, bool review, const String &l1, const String 
     leds(false, false, true);
     beepBad();
   }
-  oled(l1, l2, "");
-  feedbackUntil = millis() + 1300;
+}
+
+bool showMascot(const char *bmpHex, const String &l1, const String &l2, const String &l3) {
+  if (!oledOk || strlen(bmpHex) != 256 || l1.length() > 15 || l2.length() > 15 || l3.length() > 7) return false;
+  uint8_t bmp[128];
+  if (hexToBytes(bmpHex, bmp, sizeof(bmp)) != 128) return false;
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.print(F("N.A.V.I"));
+  display.setCursor(80, 0);
+  display.print(WiFi.status() == WL_CONNECTED ? F(" WiFi") : F(" SIN RED"));
+  display.drawFastHLine(0, 11, 128, SSD1306_WHITE);
+  display.drawBitmap(0, 22, bmp, 32, 32, SSD1306_WHITE);
+  display.setCursor(38, 18);
+  display.print(l1);
+  display.setCursor(38, 30);
+  display.print(l2);
+  if (l3.length()) {
+    display.setTextSize(2);
+    display.setCursor(38, 44);
+    display.print(l3);
+  }
+  display.display();
+  return true;
+}
+
+String writeNdef(const char *hex) {
+  uint8_t data[144];
+  int n = hexToBytes(hex, data, sizeof(data));
+  if (n <= 0) return "DATOS";
+  while (n % 4) data[n++] = 0x00;
+  for (int i = 0; i < n; i += 4) {
+    uint8_t page = 4 + i / 4;
+    if (page > 39) return "MUY GRANDE";
+    if (!nfc.ntag2xx_WritePage(page, data + i)) return "SE MOVIO";
+  }
+  return "";
+}
+
+void reportWrite(const String &job, const String &uid, const String &err) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  JsonDocument doc;
+  doc["job"] = job;
+  doc["uid"] = uid;
+  doc["ok"] = err.length() == 0;
+  if (err.length()) doc["error"] = err;
+  doc["terminal_id"] = TERMINAL_ID;
+  String body;
+  serializeJson(doc, body);
+  HTTPClient http;
+  http.begin(baseUrl() + "/api/terminal/written");
+  http.setTimeout(2500);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Terminal-Key", TERMINAL_KEY);
+  http.POST(body);
+  http.end();
+}
+
+String readCredential(uint8_t uidLen);
+void alertFor(const String &status, bool review);
+
+void handleWrite(JsonDocument &r, const String &uid, bool ntag) {
+  String job = r["job"] | "";
+  const char *ndef = r["ndef"] | "";
+  String expected = r["cred"] | "";
+  oled("GRABANDO", "NO RETIRE", "LA TARJETA");
+  String err = ntag ? writeNdef(ndef) : String("NO ES NTAG");
+  if (!err.length() && readCredential(7) != expected) err = "VERIFICACION";
+  reportWrite(job, uid, err);
+  if (err.length()) {
+    leds(false, false, true);
+    beepBad();
+    oled("NO GRABO", err, "VUELVA A ACERCARLA");
+  } else {
+    leds(true, false, false);
+    beepOk();
+    delay(90);
+    beepOk();
+    oled("GRABADA", "TARJETA LISTA", "");
+  }
+  lastUid = "";
+  feedbackUntil = millis() + 2200;
 }
 
 bool ndefComplete(const uint8_t *m, uint16_t n) {
@@ -338,9 +444,26 @@ void sendScan(const String &uid, const String &cred, bool ntag) {
   }
   String status = r["status"] | "ERROR";
   if (status == "REPETIDO") return;
+  if (status == "GRABAR") {
+    handleWrite(r, uid, ntag);
+    return;
+  }
   bool review = r["review"] | false;
   String l1 = r["display"]["line1"] | "";
   String l2 = r["display"]["line2"] | "";
+  String l3 = r["display"]["line3"] | "";
+  const char *bmp = r["mascot"] | "";
+  if (showMascot(bmp, l1, l2, l3)) {
+    alertFor(status, review);
+    feedbackUntil = millis() + (l3.length() ? 7000 : 1800);
+    return;
+  }
+  if (l3.length()) {
+    alertFor(status, review);
+    oled(l1, l2, String("CODIGO ") + l3);
+    feedbackUntil = millis() + 7000;
+    return;
+  }
   feedback(status, review, l1, l2);
 }
 

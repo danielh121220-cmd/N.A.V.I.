@@ -13,6 +13,7 @@ const T = require('./time');
 const H = require('./health');
 const ST = require('./student');
 const C = require('./credential');
+const P = require('./pet');
 
 const app = express();
 const server = http.createServer(app);
@@ -43,6 +44,16 @@ function broadcast(type, payload) {
   }
 }
 A.setBroadcast(broadcast);
+P.setHooks({
+  died(s, run) {
+    broadcast('mascot_died', { student_id: s.id, first_name: s.first_name, last_name: s.last_name, mascot: s.mascot, run });
+    const recent = db.q("SELECT 1 FROM notifications WHERE student_id = ? AND kind = 'ABSENT_STREAK' AND created_at > ?").get(s.id, new Date(Date.now() - 7 * 86400000).toISOString().replace('T', ' ').slice(0, 19));
+    if (getSettings().notify_on_absent && !recent) setImmediate(() => notifier.notify('ABSENT_STREAK', s.id, null));
+  },
+  revived(s) {
+    broadcast('mascot_revived', { student_id: s.id, first_name: s.first_name, mascot: s.mascot });
+  }
+});
 notifier.setListener(n => broadcast('notification', n), u => broadcast('notification_update', u));
 
 const wrap = fn => (req, res) => {
@@ -297,7 +308,7 @@ app.delete('/api/courses/:id', auth.requireAdmin, wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-const studentSelect = `SELECT s.id, s.student_code, s.first_name, s.last_name, s.course_id, s.nfc_uid, s.parent_name, s.parent_phone, s.parent_email, s.mascot, s.mascot_name, s.card_ver, CASE WHEN s.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
+const studentSelect = `SELECT s.id, s.student_code, s.first_name, s.last_name, s.course_id, s.nfc_uid, s.parent_name, s.parent_phone, s.parent_email, s.mascot, s.mascot_name, s.mascot_dead_on, s.card_ver, CASE WHEN s.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
   CASE WHEN s.parent_telegram IS NULL THEN 0 ELSE 1 END AS telegram_linked, s.face_photo, s.active, s.created_at, c.name AS course_name, c.code AS course_code,
   CASE WHEN h.allergies IS NOT NULL AND h.allergies != '[]' THEN 1 ELSE 0 END AS has_allergy,
   CASE WHEN h.conditions IS NOT NULL AND h.conditions != '[]' THEN 1 ELSE 0 END AS has_condition,
@@ -440,6 +451,52 @@ app.post('/api/students/:id/reset-access', auth.requireUser, wrap((req, res) => 
   res.json(ST.accessInfo(Number(req.params.id)));
 }));
 
+function publicBase(req) {
+  if (config.publicUrl) return config.publicUrl;
+  if (req && req.headers && req.headers.host && !/^(localhost|127\.)/.test(req.headers.host)) return `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
+  const ip = lanAddresses()[0];
+  return ip ? `http://${ip}:${config.port}` : `http://localhost:${config.port}`;
+}
+
+A.setWriteBuilder(st => {
+  const out = C.issue(st.id, false);
+  const h = H.get(st.id);
+  const base = lastBase || publicBase();
+  return { cred: out.cred, url: h && h.consent && h.token ? `${base}/e/${h.token}` : `${base}/` };
+});
+let lastBase = null;
+
+app.post('/api/students/:id/write-card', auth.requireUser, wrap((req, res) => {
+  const s = db.q('SELECT id FROM students WHERE id = ? AND active = 1').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'No encontrado' });
+  lastBase = publicBase(req);
+  res.json(A.armWrite(s.id, req.user.id, Boolean(req.body && req.body.assign)));
+}));
+
+app.delete('/api/write-card', auth.requireUser, (req, res) => {
+  A.disarmWrite();
+  res.json({ ok: true });
+});
+
+app.post('/api/terminal/written', auth.requireTerminalOrUser, wrap((req, res) => {
+  const b = req.body || {};
+  const done = A.writeDone(String(b.job || ''), String(b.uid || '').toUpperCase(), b.ok === true, b.error);
+  res.json({ ok: done });
+}));
+
+app.post('/api/student/code-login', wrap((req, res) => {
+  const ip = req.socket.remoteAddress;
+  if (tooManyAttempts('st:' + ip)) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos.', code: 'LOCKED' });
+  const out = ST.codeLogin(req.body || {});
+  if (out.status !== 200) noteAttempt('st:' + ip);
+  res.status(out.status).json(out.body);
+}));
+
+app.post('/api/student/demo-unlock', ST.requireStudent, wrap((req, res) => {
+  if (!config.demoMode) return res.status(403).json({ error: 'Solo en modo demostración' });
+  res.json(ST.demoUnlock(req.student.id));
+}));
+
 app.post('/api/student/card-login', wrap((req, res) => {
   const ip = req.socket.remoteAddress;
   if (tooManyAttempts('st:' + ip)) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos.', code: 'LOCKED' });
@@ -459,7 +516,17 @@ app.post('/api/student/demo-login', wrap((req, res) => {
   res.status(out.status).json(out.body);
 }));
 
-app.get('/api/student/me', ST.requireStudent, (req, res) => res.json(ST.me(req.student.id)));
+app.get('/api/student/me', ST.requireStudent, (req, res) => {
+  const out = ST.me(req.student.id);
+  const renew = ST.renewal(req);
+  res.json(renew ? { ...out, renew } : out);
+});
+app.post('/api/student/adopt', ST.requireStudent, wrap((req, res) => {
+  const out = ST.adopt(req.student.id, (req.body || {}).mascot);
+  if (out.status === 200) broadcast('mascot_adopted', { student_id: req.student.id, mascot: out.body.student.mascot });
+  res.status(out.status).json(out.body);
+}));
+app.get('/api/early-warning', auth.requireUser, (req, res) => res.json(P.atRisk(3)));
 app.patch('/api/student/me', ST.requireStudent, wrap((req, res) => res.json(ST.update(req.student.id, req.body || {}))));
 app.get('/api/student/health', ST.requireStudent, (req, res) => res.json({ health: H.get(req.student.id) }));
 
@@ -561,7 +628,8 @@ app.post('/api/attendance/scan', auth.requireTerminalOrUser, wrap((req, res) => 
     snapshotBuffer: dataUrlToBuffer(b.snapshot_photo),
     source: 'NFC',
     cred: typeof b.cred === 'string' ? b.cred.slice(0, 200) : null,
-    ntag: b.ntag === true
+    ntag: b.ntag === true,
+    simulated: !req.viaTerminal
   });
   res.status(out.code).json(out.body);
 }));

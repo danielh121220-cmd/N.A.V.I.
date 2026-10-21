@@ -36,7 +36,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private static final String START = "file:///android_asset/start.html";
     private static final String DEMO = "file:///android_asset/demo.html";
     private static final int FILE_REQUEST = 42;
-    private static final String VERSION = "3.3";
+    private static final String VERSION = "3.4";
 
     private WebView web;
     private NfcAdapter nfc;
@@ -60,6 +60,13 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
+        s.setTextZoom(Math.max(100, Math.min(118, Math.round(getResources().getConfiguration().fontScale * 100))));
+        web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        web.setVerticalScrollBarEnabled(false);
+        web.setHorizontalScrollBarEnabled(false);
         s.setUserAgentString(s.getUserAgentString() + " NaviAndroid/" + VERSION);
         web.addJavascriptInterface(new Bridge(), "NaviAndroid");
         web.setWebViewClient(new Client());
@@ -167,8 +174,35 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
 
     @Override
     public void onBackPressed() {
-        if (web != null && web.canGoBack()) web.goBack();
-        else super.onBackPressed();
+        if (web == null) {
+            super.onBackPressed();
+            return;
+        }
+        web.evaluateJavascript("(window.naviBack&&window.naviBack())?'1':'0'", new ValueCallback<String>() {
+            @Override
+            public void onReceiveValue(String v) {
+                if ("\"1\"".equals(v)) return;
+                if (web.canGoBack()) web.goBack();
+                else moveTaskToBack(true);
+            }
+        });
+    }
+
+    private void tint(final int color, final boolean light) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Window w = getWindow();
+                w.setStatusBarColor(color);
+                w.setNavigationBarColor(color);
+                int flags = 0;
+                if (light) {
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                    if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
+                w.getDecorView().setSystemUiVisibility(flags);
+            }
+        });
     }
 
     @Override
@@ -433,6 +467,27 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         @JavascriptInterface
         public String version() {
             return VERSION;
+        }
+
+        @JavascriptInterface
+        public void setBars(String hex, boolean light) {
+            try {
+                tint(android.graphics.Color.parseColor(hex), light);
+            } catch (Exception e) {
+            }
+        }
+
+        @JavascriptInterface
+        public void haptic(final int ms) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        web.performHapticFeedback(ms > 20 ? android.view.HapticFeedbackConstants.LONG_PRESS : android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+                    } catch (Exception e) {
+                    }
+                }
+            });
         }
     }
 }

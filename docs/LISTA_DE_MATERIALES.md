@@ -34,7 +34,8 @@ Precios aproximados en dólares para Ecuador (tiendas de electrónica locales o 
 | --- | --- | --- |
 | Sensor de distancia **VL53L0X** (I2C) | $5 – $8 | Activa "una presencia = una tarjeta". Se conecta al mismo bus I2C. En `config.h` pon `USE_PRESENCE_SENSOR 1`. |
 | Tarjetas **NTAG 424 DNA** | $1,50 – $3 c/u | No se pueden clonar (generan un código distinto en cada toque). El software actual aún no las usa: preséntalas como la fase 2. |
-| Caja impresa en 3D | — | Lector a la altura del pecho y cámara a la altura del rostro. |
+| Carcasa impresa en 3D (`hardware/cad`) | $3 – $6 de filamento | Lector de 90 × 126 × 40 mm y caja de cámara. 4 tornillos M3 × 10 mm y cinta doble faz. Ver `CARCASA_Y_LLAVEROS.md`. |
+| Llaveros impresos + sticker NTAG213 de 25 mm | $0,50 – $0,80 c/u | Dos piezas con el logo y el nombre; el sticker va adentro. |
 
 ## 4. Para el día de la competencia
 

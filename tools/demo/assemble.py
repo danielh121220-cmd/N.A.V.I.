@@ -5,6 +5,7 @@ css = (P/'style.css').read_text()
 m = re.search(r"@media \(prefers-color-scheme: dark\) \{\n  :root \{\n(.*?)\n  \}\n\}", css, re.S)
 tokens = m.group(1)
 css = css[:m.start()] + "@media (prefers-color-scheme: dark) {\n  :root:not([data-theme=\"light\"]) {\n" + tokens + "\n  }\n}\n:root[data-theme=\"dark\"] {\n" + tokens + "\n}" + css[m.end():]
+css = re.sub(r'url\("fonts/([A-Za-z-]+)\.woff2"\)', lambda m: 'url("data:font/woff2;base64,' + base64.b64encode((P/'fonts'/(m.group(1) + '.woff2')).read_bytes()).decode() + '")', css)
 css += "\n" + (D/'demo.css').read_text()
 app = (P/'app.js').read_text()
 def rep(a, b):

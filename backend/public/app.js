@@ -98,7 +98,7 @@
     AUSENTE: { label: 'Ausente', cls: 'p-abs' }
   };
   const SOURCE = { NFC: 'Tarjeta', MANUAL: 'Docente', AUTO: 'Automático', OFFLINE: 'Sin conexión' };
-  const KIND = { ARRIVAL: 'Ingreso', LATE: 'Atraso', ABSENT: 'Ausencia', LATE_AFTER_ABSENT: 'Llegó tarde', NOT_IN_CLASS: 'No está en el aula', EMERGENCY: 'Ficha médica abierta', CUSTOM: 'Mensaje' };
+  const KIND = { ARRIVAL: 'Ingreso', LATE: 'Atraso', ABSENT: 'Ausencia', LATE_AFTER_ABSENT: 'Llegó tarde', NOT_IN_CLASS: 'No está en el aula', EMERGENCY: 'Ficha médica abierta', ABSENT_STREAK: '5 faltas seguidas', CUSTOM: 'Mensaje' };
   const NSTATUS = { ENVIADO: ['Enviado', 'p-ok'], MANUAL: ['Enviado', 'p-ok'], FALLIDO: ['Falló', 'p-abs'], SIMULADO: ['Simulado', 'p-none'], ENLACE: ['Por enviar', 'p-info'] };
   const CHANNEL = { EMAIL: ['Correo', 'mail', 'blue'], WHATSAPP: ['WhatsApp', 'chat', 'green'], TELEGRAM: ['Telegram', 'send', 'teal'] };
   const PALETTE = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#30B0C7', '#5856D6', '#FF3B30', '#A2845E', '#00C7BE'];
@@ -110,7 +110,32 @@
   const firstName = n => String(n || '').split(' ')[0];
   const isAdmin = () => S.user && S.user.role === 'ADMINISTRADOR';
   const canConfigure = () => isAdmin() || S.demo;
-  const haptic = (p = 8) => { if (navigator.vibrate) navigator.vibrate(p); };
+  const haptic = (p = 8) => {
+    const ms = Array.isArray(p) ? Math.max(...p) : p;
+    if (window.NaviAndroid && NaviAndroid.haptic) { try { NaviAndroid.haptic(ms); return; } catch (e) {} }
+    if (navigator.vibrate) navigator.vibrate(p);
+  };
+  const bars = (() => {
+    let last = '';
+    return () => {
+      if (!(window.NaviAndroid && NaviAndroid.setBars)) return;
+      const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+      const color = getComputedStyle(document.body).backgroundColor;
+      const m = color.match(/\d+(\.\d+)?/g);
+      if (!m) return;
+      const [r, g, b] = m.map(Number);
+      const hex = '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+      const light = (r * 299 + g * 587 + b * 114) / 1000 > 140;
+      const key = hex + light + dark;
+      if (key === last) return;
+      last = key;
+      try { NaviAndroid.setBars(hex, light); } catch (e) {}
+    };
+  })();
+  window.naviBack = () => {
+    if (sheetState) { closeSheet(); return true; }
+    return false;
+  };
   const mobile = () => matchMedia('(max-width: 900px)').matches;
 
   function ago(iso) {
@@ -161,7 +186,7 @@
   function avatar(p, cls = '') {
     const id = p.student_id != null ? p.student_id : p.id;
     if (p.face_photo) return `<div class="av ${cls}"><img loading="lazy" decoding="async" src="${faceUrl(id, p.face_photo)}" alt=""></div>`;
-    if (p.mascot != null && showMascots() && window.NaviMascots) return `<div class="av av-m ${cls}">${NaviBots.svg(NaviMascots.key(p.mascot), 'neutral')}</div>`;
+    if (p.mascot != null && showMascots() && window.NaviMascots) return `<div class="av av-m ${p.mascot_dead_on ? 'gone' : ''} ${cls}">${NaviBots.svg(NaviMascots.key(p.mascot), p.mascot_dead_on ? 'sleepy' : 'neutral')}</div>`;
     const ini = `${(p.first_name || '?')[0] || ''}${(p.last_name || '')[0] || ''}`.toUpperCase();
     const c = colorFor(id);
     return `<div class="av ${cls}" style="background:linear-gradient(160deg, ${c}CC, ${c})">${esc(ini)}</div>`;
@@ -351,14 +376,17 @@
   };
 
   function showAuth(mode = 'login') {
+    setTimeout(bars, 60);
     stopTimers();
     const saved = store.get('navi_bot') || 'triangle';
     root.innerHTML = `
       <div class="auth">
         <div class="auth-card">
+          <div class="role-switch" id="roleSw"><button type="button" data-role="teacher">${icon('person')} Docente</button><button type="button" data-role="student">${icon('users')} Estudiante</button></div>
           <div class="auth-bot" id="authBot" title="Tócame"></div>
           <h1>N.A.V.I</h1>
-          <p class="lead">Asistencia escolar con NFC</p>
+          <p class="lead" id="authLead">Asistencia escolar con NFC</p>
+          <div id="teacherPane">
           <div class="bubble" id="bubble">${esc(BOT_LINES[saved])}</div>
           <div class="bot-picker" id="picker">${NaviBots.KEYS.map(k => `<button type="button" class="bot-pick ${k === saved ? 'on' : ''}" data-bot="${k}" aria-label="${NaviBots.CHARACTERS[k].name}">${NaviBots.svg(k)}</button>`).join('')}</div>
           ${segHtml([['login', 'Iniciar sesión'], ['register', 'Crear cuenta']], mode, 'authMode', 'id="authSeg" style="margin-bottom:14px"')}
@@ -375,8 +403,15 @@
             <button class="btn btn-primary btn-lg btn-block" id="authSubmit" style="margin-top:16px">Entrar</button>
           </form>
           <button type="button" class="btn btn-plain btn-block" id="demoBtn" style="margin-top:6px">Probar con la cuenta demo</button>
-          <button type="button" class="btn btn-tinted btn-block kid-entry" id="kidBtn">${icon('nfc')} Soy estudiante: entrar con mi tarjeta</button>
           <p class="foot">Tus datos se quedan en el servidor de tu colegio.</p>
+          </div>
+          <div id="studentPane" class="hidden">
+            <div class="kid-trio">${[3, 0, 5].map((i, n) => `<span style="--d:${n * 90}ms">${NaviBots.svg(mascotKey(i), 'happy')}</span>`).join('')}</div>
+            <div class="kid-intro"><b>Cuenta de estudiante</b><small>Tu asistencia, tu mascota y tu ficha médica. Es distinta a la cuenta del docente y no necesita correo ni contraseña.</small></div>
+            <button type="button" class="btn btn-primary btn-lg btn-block" id="kidReader">${icon('nfc')} Usar el lector del aula</button>
+            ${NFC.available() ? `<button type="button" class="btn btn-tinted btn-lg btn-block" id="kidPhone" style="margin-top:10px">${icon('phone')} Acercar la tarjeta a este celular</button>` : '<p class="foot" style="margin-top:12px">Si tu celular no tiene NFC, usa el lector del aula: funciona con cualquier celular.</p>'}
+            <div id="kidDemo"></div>
+          </div>
         </div>
       </div>`;
 
@@ -567,7 +602,35 @@
       }
     });
 
-    $('#kidBtn').addEventListener('click', () => openStudentLogin());
+    const teacherPane = $('#teacherPane');
+    const studentPane = $('#studentPane');
+    const setRole = (role, quiet) => {
+      store.set('navi_role', role);
+      $$('#roleSw button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
+      teacherPane.classList.toggle('hidden', role !== 'teacher');
+      studentPane.classList.toggle('hidden', role !== 'student');
+      $('#authBot').classList.toggle('hidden', role === 'student');
+      $('#authLead').textContent = role === 'student' ? 'Entra con tu tarjeta NFC' : 'Asistencia escolar con NFC';
+      if (!quiet) haptic(6);
+      if (role === 'student' && !studentPane.dataset.demo) {
+        studentPane.dataset.demo = '1';
+        api('/student/demo-list').then(list => {
+          const d = $('#kidDemo');
+          if (!d || !list.length) return;
+          d.innerHTML = `<div class="group-title" style="margin-top:24px;padding:0 4px 8px">Versión de prueba · entra sin tarjeta</div><div class="demo-kids">${list.slice(0, 9).map(k => `<button type="button" data-id="${k.id}"><span class="mk">${NaviBots.svg(mascotKey(k.mascot), 'neutral')}</span><b>${esc(k.first_name)}</b><small>${esc(k.course_code)}</small></button>`).join('')}</div>`;
+          d.addEventListener('click', async e => {
+            const b = e.target.closest('[data-id]');
+            if (!b) return;
+            try { const r = await api('/student/demo-login', { method: 'POST', body: { student_id: Number(b.dataset.id) } }); store.set('navi_student', r.token); showStudent(); } catch (err) { toast({ title: 'No se pudo', text: err.message, mood: 'sad' }); }
+          });
+        }).catch(() => {});
+      }
+    };
+    $('#roleSw').addEventListener('click', e => { const b = e.target.closest('[data-role]'); if (b) setRole(b.dataset.role); });
+    setRole(store.get('navi_role') === 'student' ? 'student' : 'teacher', true);
+    $('#kidReader').addEventListener('click', () => openCodeLogin());
+    const kp = $('#kidPhone');
+    if (kp) kp.addEventListener('click', () => openStudentLogin());
     $('#demoBtn').addEventListener('click', async () => {
       bot.setBase('thinking');
       say('Preparando la demo…');
@@ -699,6 +762,7 @@
 
   let viewCleanup = null;
   function route() {
+    setTimeout(bars, 60);
     const m = location.hash.match(/^#\/(\w+)(?:\?(.*))?$/);
     const view = m && NAV.some(n => n.id === m[1]) ? m[1] : 'inicio';
     const params = Object.fromEntries(new URLSearchParams((m && m[2]) || ''));
@@ -744,9 +808,10 @@
 
   async function loadAll() {
     try {
-      const [status, courses, students, records, review, notifications, terminals] = await Promise.all([
-        api('/status'), api('/courses'), api('/students'), api('/attendance'), api('/review'), api('/notifications?limit=40'), api('/terminals')
+      const [status, courses, students, records, review, notifications, terminals, risk] = await Promise.all([
+        api('/status'), api('/courses'), api('/students'), api('/attendance'), api('/review'), api('/notifications?limit=40'), api('/terminals'), api('/early-warning').catch(() => [])
       ]);
+      S.risk = risk;
       S.stats = status.stats;
       S.channels = status.channels;
       S.settings = status.settings;
@@ -771,9 +836,10 @@
     clearTimeout(statsTimer);
     statsTimer = setTimeout(async () => {
       try {
-        const [status, courses] = await Promise.all([api('/status'), api('/courses')]);
+        const [status, courses, risk] = await Promise.all([api('/status'), api('/courses'), api('/early-warning').catch(() => S.risk || [])]);
         S.stats = status.stats;
         S.courses = courses;
+        S.risk = risk;
         softRefresh();
       } catch (e) {}
     }, 220);
@@ -856,6 +922,19 @@
     } else if (type === 'notification_update') {
       const n = S.notifications.find(x => x.id === p.id);
       if (n) { Object.assign(n, p); refreshNotifs(); }
+    } else if (type === 'card_written') {
+      if (S.writeWait && S.writeWait.studentId === p.student_id) S.writeWait.done(p);
+      else if (p.ok) toast({ title: 'Tarjeta grabada', mood: 'happy', sound: 'success' });
+    } else if (type === 'mascot_unlocked') {
+      const s0 = S.students.find(x => x.id === p.student_id);
+      if (s0 && S.view === 'terminal') toast({ title: `Nació la mascota de ${s0.first_name}`, text: 'Primer toque en el lector', bot: mascotKey(s0.mascot), mood: 'happy', ms: 2600 });
+    } else if (type === 'mascot_died') {
+      toast({ title: `${p.first_name} lleva ${p.run} faltas seguidas`, text: 'Su mascota se fue. Revisa la alerta temprana.', bot: mascotKey(p.mascot), mood: 'sad', ms: 6000, action: { label: 'Ver', fn: () => go('inicio') } });
+      loadStudents();
+      refreshStats();
+    } else if (type === 'mascot_revived' || type === 'mascot_adopted') {
+      loadStudents();
+      refreshStats();
     } else if (type === 'channels') {
       S.channels = p;
     } else if (type === 'notification') {
@@ -1474,6 +1553,16 @@
     return segHtml([['ALL', 'Todos'], ['A_TIEMPO', 'Puntual'], ['TARDE', 'Atraso'], ['AUSENTE', 'Ausente'], ['REVISAR', 'Revisar']].map(([k, l]) => [k, l, mobile() ? null : counts[k] || 0]), S.filter, 'filter');
   }
 
+  function riskHtml() {
+    const list = S.risk || [];
+    if (!list.length) return '';
+    const heart = on => `<svg viewBox="0 0 24 24" class="${on ? 'on' : ''}"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>`;
+    const course = id => (S.courses.find(c => c.id === id) || {}).code || '';
+    return `<div class="section-title">Alerta temprana <small>Faltas seguidas sin justificar</small></div>
+      <div class="group">${list.slice(0, 8).map(r => `<button type="button" class="cell has-av risk-row" data-act="student" data-id="${r.student_id}">${avatar({ ...r, mascot_dead_on: r.dead ? r.dead_on : null })}<div class="grow"><div class="t">${esc(r.first_name)} ${esc(r.last_name)} <small style="color:var(--text-2)">${esc(course(r.course_id))}</small></div><div class="s">${r.dead ? `${r.run} faltas seguidas · su mascota se fue` : `${r.run} faltas seguidas · ${r.health === 1 ? 'último corazón' : `quedan ${r.health} corazones`}`}</div></div><div class="hearts-mini">${Array.from({ length: 5 }, (_, i) => heart(i < r.health)).join('')}</div></button>`).join('')}</div>
+      <p class="group-foot">Justifica las faltas que tengan respaldo (art. 170 del Reglamento a la LOEI) y conversa con el DECE sobre los demás casos. Con 5 faltas seguidas se avisa al representante.</p>`;
+  }
+
   const VIEWS = {};
 
   VIEWS.inicio = {
@@ -1486,6 +1575,7 @@
         ${install}
         <div class="section-title">Cursos <small>Hoy</small></div>
         <div class="grid courses" id="courseCards">${coursesHtml()}</div>
+        <div id="riskBox">${riskHtml()}</div>
         <div class="grid two" style="margin-top:8px">
           <div><div class="section-title">En vivo <span class="conn ${S.online ? 'on' : 'off'}"></span></div><div id="feedSeg" style="margin-bottom:10px">${filterSeg()}</div><div class="group" id="feed">${feedRows()}</div></div>
           <div><div class="section-title">Avisos <span id="waHead">${waHead()}</span></div><div class="group" id="notifs">${notifRows()}</div></div>
@@ -1495,6 +1585,7 @@
       const set = (id, html) => { const el = $('#' + id); if (el) el.innerHTML = html; };
       set('hero', heroHtml());
       set('courseCards', coursesHtml());
+      set('riskBox', riskHtml());
       set('feedSeg', filterSeg());
       set('feed', feedRows());
       set('notifs', notifRows());
@@ -1869,7 +1960,7 @@
           try {
             const saved = isNew ? await api('/students', { method: 'POST', body: data }) : await api(`/students/${v.id}`, { method: 'PATCH', body: data });
             closeSheet();
-            toast({ title: isNew ? 'Estudiante agregado' : 'Cambios guardados', text: `${saved.first_name} ${saved.last_name}`, mood: 'happy' });
+            toast(isNew ? { title: 'Estudiante agregado', text: 'Graba su tarjeta con el lector para que tenga su credencial.', mood: 'happy', ms: 6000, action: { label: 'Grabar', fn: () => openCardTools(saved) } } : { title: 'Cambios guardados', text: `${saved.first_name} ${saved.last_name}`, mood: 'happy' });
             loadStudents();
             refreshStats();
           } catch (e) {
@@ -2123,16 +2214,19 @@
 
   let deviceBot = null;
   let deviceTimer = 0;
-  function deviceShow(l1, l2, mood, led, snd) {
+  function deviceShow(l1, l2, mood, led, snd, extra = {}) {
     const a = $('#scrL1');
     if (!a) return;
     a.textContent = l1;
-    $('#scrL2').textContent = l2 || '';
+    $('#scrL2').innerHTML = esc(l2 || '') + (extra.code ? ` <b class="scr-code">${esc(extra.code)}</b>` : '');
     $$('.led').forEach(x => x.classList.toggle('on', x.classList.contains(led)));
-    if (deviceBot) deviceBot.mood(mood);
+    if (deviceBot) {
+      if (extra.mascot != null && window.NaviMascots) deviceBot.setCharacter(NaviMascots.key(extra.mascot));
+      deviceBot.mood(mood);
+    }
     if (snd) sound(snd);
     clearTimeout(deviceTimer);
-    deviceTimer = setTimeout(deviceIdle, 1800);
+    deviceTimer = setTimeout(deviceIdle, extra.code ? 7000 : 1800);
   }
   function deviceIdle() {
     const a = $('#scrL1');
@@ -2140,17 +2234,25 @@
     a.textContent = 'ACERQUE SU TARJETA';
     $('#scrL2').textContent = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
     $$('.led').forEach(x => x.classList.remove('on'));
-    if (deviceBot) deviceBot.mood('neutral');
+    if (deviceBot) {
+      const me = (S.user && S.user.avatar) || 'triangle';
+      if (deviceBot.character !== me) deviceBot.setCharacter(me);
+      deviceBot.mood('neutral');
+    }
   }
   function deviceFromResult(r) {
     const d = r.display || {};
+    const x = { mascot: r.mascot_index, code: d.line3 };
     if (r.status === 'REPETIDO') return;
+    if (r.status === 'GRABADO') return deviceShow(d.line1, d.line2, 'happy', 'g', 'success');
+    if (r.status === 'ERROR_GRABAR') return deviceShow(d.line1, d.line2, 'sad', 'r', 'bad');
+    if (d.line3) return deviceShow(d.line1, d.line2, 'happy', r.status === 'DUPLICADO' ? 'y' : 'g', 'ok', x);
     if (r.status === 'EMERGENCIA') return deviceShow(d.line1, d.line2, 'worried', 'r', 'sos');
     if (r.status === 'DESCONOCIDO') return deviceShow(d.line1, d.line2, 'angry', 'r', 'bad');
-    if (r.status === 'DUPLICADO') return deviceShow(d.line1, d.line2, 'confused', 'y', 'warn');
-    if (r.review) return deviceShow(d.line1, d.line2, 'surprised', 'y', 'warn');
-    if (r.status === 'TARDE') return deviceShow(d.line1, d.line2, 'worried', 'y', 'warn');
-    deviceShow(d.line1, d.line2, 'happy', 'g', 'ok');
+    if (r.status === 'DUPLICADO') return deviceShow(d.line1, d.line2, 'confused', 'y', 'warn', x);
+    if (r.review) return deviceShow(d.line1, d.line2, 'surprised', 'y', 'warn', x);
+    if (r.status === 'TARDE') return deviceShow(d.line1, d.line2, 'worried', 'y', 'warn', x);
+    deviceShow(d.line1, d.line2, 'happy', 'g', 'ok', x);
   }
   function deviceFromRecord(p) {
     deviceFromResult({ status: p.status, review: p.review_state === 'PENDIENTE', display: { line1: `HOLA ${String(p.first_name).toUpperCase()}`, line2: p.status === 'TARDE' ? `ATRASO ${hhmm(p.time_recorded)}` : `A TIEMPO ${hhmm(p.time_recorded)}` } });
@@ -2363,7 +2465,7 @@
               ${frow('institution_name', 'Institución', { value: u.institution_name || '' })}
               <button class="cell center" data-act="saveProfile">Guardar perfil</button>
             </form>
-            <div class="section-title" style="font-size:20px;margin:32px 0 -12px">Cursos y horarios</div>
+            <div class="section-title" style="font-size:20px;margin:32px 0 4px">Cursos y horarios</div>
             <div id="courseEdit">${courseGroups()}</div>
             ${isAdmin() ? `<div class="group-title">Nuevo curso</div><form id="newCourse" class="group" novalidate>${frow('name', 'Nombre', { placeholder: '3ro BGU C' })}${frow('code', 'Código', { placeholder: 'BGU-3C', attrs: 'style="text-transform:uppercase"' })}<button class="cell center" data-act="addCourse">Agregar curso</button></form>` : ''}
           </div>
@@ -2657,56 +2759,59 @@
     return api2;
   }
 
+  function studentFlow(el, box, endpoint, onFail) {
+    const finish = data => {
+      store.set('navi_student', data.token);
+      closeSheet(true);
+      showStudent();
+    };
+    const run = async (body, prev) => {
+      try {
+        const r = await api(endpoint, { method: 'POST', body: { ...body, device_id: deviceId(), device_label: navigator.userAgent.includes('Android') ? 'Android' : /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone' : 'Celular' } });
+        if (r.token) return finish(r);
+        const info = mascotInfo(r.student.mascot);
+        box.innerHTML = `<div class="pin-head">${NaviBots.svg(mascotKey(r.student.mascot), 'happy')}</div><div id="pinHost"></div>`;
+        if (r.need === 'SET_PIN') {
+          let first = '';
+          pinPad($('#pinHost', box), {
+            title: `¡Hola, ${r.student.first_name}!`,
+            sub: `Crea un PIN de 4 números. Te lo pediremos solo en celulares nuevos. ${info.name} te espera.`,
+            onDone(v, p) {
+              if (!first) { first = v; p.reset(); $('.pin small', box).textContent = 'Escríbelo otra vez para confirmar.'; return; }
+              if (v !== first) { first = ''; $('.pin small', box).textContent = 'No coincidían. Crea tu PIN de nuevo.'; return p.shake(); }
+              run({ ...body, new_pin: v }, p);
+            }
+          });
+          return;
+        }
+        pinPad($('#pinHost', box), {
+          title: `Hola, ${r.student.first_name}`,
+          sub: 'Este celular es nuevo. Escribe tu PIN.',
+          onDone(v, p) { run({ ...body, pin: v }, p); }
+        });
+      } catch (err) {
+        if (prev && (err.code === 'BAD_PIN' || err.code === 'PIN_FORMAT')) { prev.shake(); $('.pin small', box).textContent = err.message; return; }
+        toast({ title: 'No pude entrar', text: err.message, mood: err.code && err.code.startsWith('CRED_') ? 'angry' : 'sad', ms: 5000 });
+        if (onFail) onFail(err);
+      }
+    };
+    return run;
+  }
+
   function openStudentLogin() {
     let abort = null;
     openSheet({
-      title: 'Entrar con tu tarjeta',
+      title: 'Tarjeta en este celular',
       body: `
         <div id="stuLogin">
           <div class="tap-hero"><div class="tap-phone">${icon('phone')}</div><div class="tap-card"><span>N.A.V.I</span>${icon('nfc')}</div><div class="tap-ring"></div></div>
-          <div class="tap-text"><b>Acerca tu tarjeta a la parte de atrás del celular</b><small id="stuHint">${NFC.available() ? 'Tu tarjeta tiene una firma cifrada que solo el servidor del colegio puede comprobar.' : 'Este navegador no puede leer tarjetas NFC. Usa la app N.A.V.I para Android o Chrome en un celular Android.'}</small></div>
+          <div class="tap-text"><b>Acerca tu tarjeta a la parte de atrás del celular</b><small id="stuHint">${NFC.available() ? 'Tu tarjeta tiene una firma cifrada que solo el servidor del colegio puede comprobar.' : 'Este celular no puede leer tarjetas. Usa el lector del aula.'}</small></div>
           ${NFC.available() ? '<button class="btn btn-primary btn-lg btn-block" id="stuScan">Leer mi tarjeta</button>' : ''}
-          <div id="stuDemo"></div>
         </div>`,
       onClose() { if (abort) abort.abort(); NFC.stop(); },
       onMount(el) {
         const box = $('#stuLogin', el);
-        const finish = data => {
-          store.set('navi_student', data.token);
-          closeSheet(true);
-          showStudent();
-        };
-        const tryLogin = async (body, prev) => {
-          try {
-            const r = await api('/student/card-login', { method: 'POST', body: { ...body, device_id: deviceId(), device_label: navigator.userAgent.includes('Android') ? 'Android' : 'Celular' } });
-            if (r.token) return finish(r);
-            const info = mascotInfo(r.student.mascot);
-            box.innerHTML = `<div class="pin-head">${NaviBots.svg(mascotKey(r.student.mascot), 'happy')}</div><div id="pinHost"></div>`;
-            if (r.need === 'SET_PIN') {
-              let first = '';
-              const pad = pinPad($('#pinHost', box), {
-                title: `¡Hola, ${r.student.first_name}!`,
-                sub: `Crea un PIN de 4 números. Te lo pediremos solo en celulares nuevos. ${info.name} te espera.`,
-                onDone(v, p) {
-                  if (!first) { first = v; p.reset(); $('.pin small', box).textContent = 'Escríbelo otra vez para confirmar.'; return; }
-                  if (v !== first) { first = ''; $('.pin small', box).textContent = 'No coincidían. Crea tu PIN de nuevo.'; return p.shake(); }
-                  tryLogin({ ...body, new_pin: v }, p);
-                }
-              });
-              return pad;
-            }
-            pinPad($('#pinHost', box), {
-              title: `Hola, ${r.student.first_name}`,
-              sub: 'Este celular es nuevo. Escribe tu PIN.',
-              onDone(v, p) { tryLogin({ ...body, pin: v }, p); }
-            });
-          } catch (err) {
-            if (prev && (err.code === 'BAD_PIN' || err.code === 'PIN_FORMAT')) { prev.shake(); $('.pin small', box).textContent = err.message; return; }
-            toast({ title: 'No pude entrar', text: err.message, mood: err.code && err.code.startsWith('CRED_') ? 'angry' : 'sad', ms: 5000 });
-            const hint = $('#stuHint', el);
-            if (hint) hint.textContent = err.message;
-          }
-        };
+        const run = studentFlow(el, box, '/student/card-login', err => { const h = $('#stuHint', el); if (h) h.textContent = err.message; });
         const scan = $('#stuScan', el);
         if (scan) scan.addEventListener('click', async () => {
           scan.disabled = true;
@@ -2718,8 +2823,8 @@
             box.classList.remove('listening');
             SFX.play('scan');
             const cred = credOf(rec);
-            if (!cred) throw new Error('Esta tarjeta todavía no tiene tu credencial. Pide al docente que la grabe.');
-            await tryLogin({ cred, uid: rec.uid });
+            if (!cred) throw new Error('Esta tarjeta todavía no tiene tu credencial. Pide al docente que la grabe con el lector del aula.');
+            await run({ cred, uid: rec.uid });
           } catch (err) {
             box.classList.remove('listening');
             if (err.name !== 'AbortError') toast({ title: 'No se pudo leer', text: err.name === 'NotAllowedError' ? 'Permite el uso de NFC.' : err.message, mood: 'confused', ms: 5000 });
@@ -2727,16 +2832,44 @@
             scan.textContent = 'Leer mi tarjeta';
           }
         });
-        api('/student/demo-list').then(list => {
-          const d = $('#stuDemo', el);
-          if (!d || !list.length) return;
-          d.innerHTML = `<div class="group-title" style="margin-top:22px">Versión de prueba · sin tarjeta</div><div class="demo-kids">${list.slice(0, 9).map(s => `<button type="button" data-id="${s.id}"><span class="mk">${NaviBots.svg(mascotKey(s.mascot), 'neutral')}</span><b>${esc(s.first_name)}</b><small>${esc(s.course_code)}</small></button>`).join('')}</div><p class="group-foot">Así se ve la app del estudiante. En el colegio real se entra solo con la tarjeta.</p>`;
-          d.addEventListener('click', async e => {
-            const b = e.target.closest('[data-id]');
-            if (!b) return;
-            try { finish(await api('/student/demo-login', { method: 'POST', body: { student_id: Number(b.dataset.id) } })); } catch (err) { toast({ title: 'No se pudo', text: err.message, mood: 'sad' }); }
-          });
-        }).catch(() => {});
+      }
+    });
+  }
+
+  function openCodeLogin() {
+    openSheet({
+      title: 'Entrar con el lector',
+      body: `
+        <div id="codeLogin">
+          <div class="oled-demo"><div class="oled-top"><span>N.A.V.I</span><span>WiFi</span></div><div class="oled-body"><div class="oled-pet">${NaviBots.svg(mascotKey(0), 'happy')}</div><div><div>NACIO CHISPA!</div><div>CODIGO APP:</div><b>482193</b></div></div></div>
+          <ol class="steps big">
+            <li>Acerca tu tarjeta al <b>lector del aula</b>. Si ya marcaste hoy, acércala otra vez.</li>
+            <li>En la pantalla del lector aparece tu mascota y un <b>código de 6 números</b>.</li>
+            <li>Escríbelo aquí. Vence en 5 minutos.</li>
+          </ol>
+          <input class="code-in" id="codeIn" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="Código del lector">
+          <button class="btn btn-primary btn-lg btn-block" id="codeGo" style="margin-top:14px">Entrar</button>
+          <p class="group-foot" style="text-align:center;margin-top:10px">Funciona con cualquier celular, tenga o no NFC.</p>
+        </div>`,
+      onMount(el) {
+        const box = $('#codeLogin', el);
+        const input = $('#codeIn', el);
+        const go = $('#codeGo', el);
+        const run = studentFlow(el, box, '/student/code-login', () => { input.value = ''; input.classList.add('bad'); go.disabled = false; go.textContent = 'Entrar'; input.focus(); });
+        const submit = () => {
+          const code = input.value.replace(/\D/g, '');
+          if (code.length !== 6) { input.classList.add('bad'); haptic([20, 40, 20]); return; }
+          go.disabled = true;
+          go.textContent = 'Comprobando…';
+          run({ code });
+        };
+        input.addEventListener('input', () => {
+          input.value = input.value.replace(/\D/g, '').slice(0, 6);
+          input.classList.remove('bad');
+          if (input.value.length === 6) submit();
+        });
+        go.addEventListener('click', submit);
+        setTimeout(() => input.focus(), 350);
       }
     });
   }
@@ -2758,7 +2891,7 @@
   }
 
   const WD = ['', 'L', 'M', 'X', 'J', 'V', 'S', 'D'];
-  const DAY_KIND = { A_TIEMPO: ['ok', 'check', 'A tiempo'], TARDE: ['late', 'clock', 'Atraso'], JUSTIFICADO: ['just', 'heart', 'Justificada'], AUSENTE: ['rest', 'moon', 'Descanso'], NONE: ['none', '', 'Sin clase'], HOY: ['today', '', 'Hoy'] };
+  const DAY_KIND = { A_TIEMPO: ['ok', 'check', 'A tiempo'], TARDE: ['late', 'clock', 'Atraso'], JUSTIFICADO: ['just', 'heart', 'Justificada'], AUSENTE: ['miss', 'moon', 'Faltaste'], NONE: ['none', '', 'Sin clase'], HOY: ['today', '', 'Hoy'] };
   const BADGE_ICON = { egg: '🥚', flag: '🚩', flame: '🔥', star: '⭐', sun: '🌅', medal: '🏅', shield: '🛡️', trophy: '🏆' };
 
   function confetti(host, colors) {
@@ -2770,10 +2903,11 @@
   }
 
   async function showStudent() {
+    setTimeout(bars, 60);
     stopTimers();
     root.innerHTML = `<div class="kid"><div class="kid-load">${NaviBots.svg('triangle', 'thinking')}</div></div>`;
     let data;
-    try { data = await sapi('/student/me'); } catch (e) {
+    try { data = await sapi('/student/me'); if (data.renew) store.set('navi_student', data.renew); } catch (e) {
       if (e.code === 'OFFLINE') { root.innerHTML = `<div class="auth"><div class="auth-card"><div class="auth-bot">${NaviBots.svg('triangle', 'sad')}</div><h1>Sin conexión</h1><div class="bubble error">No puedo llegar al servidor del colegio.</div><button class="btn btn-primary btn-lg btn-block" id="retryBtn">Reintentar</button></div></div>`; $('#retryBtn').addEventListener('click', () => showStudent()); }
       return;
     }
@@ -2795,6 +2929,7 @@
             <div class="kid-say" id="kidSay">${esc(d.line)}</div>
           </section>
           <div class="kid-name"><h1>Hola, ${esc(st.first_name)}</h1><button type="button" class="kid-petname" id="petName">${esc(name)} ${icon('wand')}</button><small>Mascota ${info.number} de 40 · ${esc(NaviMascots.describe(st.mascot))}. Nadie más en tu curso la tiene.</small></div>
+          ${lifeHtml(d.pet, name)}
           <div class="kid-grid">
             <div class="kid-card today ${DAY_KIND[d.today.kind] ? DAY_KIND[d.today.kind][0] : ''}"><span class="lbl">Hoy</span><b>${todayLabel}</b><small>${d.today.time && (d.today.kind === 'A_TIEMPO' || d.today.kind === 'TARDE') ? `Marcaste a las ${d.today.time}${d.today.verified ? ' · tarjeta verificada' : ''}` : `Entrada ${esc(st.schedule_start)}`}</small></div>
             <div class="kid-card"><span class="lbl">Tu semana</span><div class="week">${d.week.map(w => { const k = DAY_KIND[w.kind] || DAY_KIND.NONE; return `<div class="wd ${k[0]}" title="${k[2]}"><i>${k[1] ? icon(k[1]) : ''}</i><span>${WD[w.weekday]}</span></div>`; }).join('')}</div></div>
@@ -2804,7 +2939,8 @@
           <div class="group-title">Logros</div>
           <div class="badges">${d.badges.map(b => `<div class="badge ${b.got ? 'got' : ''}" title="${esc(b.title)}"><span>${BADGE_ICON[b.icon] || '★'}</span><small>${esc(b.title)}</small></div>`).join('')}</div>
           <div class="group" style="margin-top:22px"><button class="cell has-icon" id="kidHealth">${ico('medical', 'red')}<div class="grow"><div class="t">Mi ficha médica</div><div class="s">Lo que verá alguien que te ayude en una emergencia</div></div>${icon('chevron', 'chev')}</button></div>
-          <p class="group-foot" style="text-align:center;margin:18px 0 8px">Tu mascota es privada: solo tú la ves. Las faltas justificadas no le afectan.</p>
+          ${historyHtml(d.pet)}
+          <p class="group-foot" style="text-align:center;margin:18px 0 8px">Tu mascota es privada: solo tú la ves. Cada falta sin justificar le quita un corazón y cada día que vienes los recupera todos. Si faltas ${d.pet.life} días de clase seguidos sin justificar, se va. Las faltas justificadas no le afectan.</p>
         </div>`;
       pet = NaviBots.mount($('#kidPet'), { character: mascotKey(st.mascot), mood: d.mood });
       $('#kidOut').addEventListener('click', e => confirmTap(e.currentTarget, '¿Salir?', () => studentLogout(false)));
@@ -2816,13 +2952,86 @@
       $('#kidHealth').addEventListener('click', openOwnHealth);
       if (goal.reached && !sessionStorage.getItem('navi_goal')) { try { sessionStorage.setItem('navi_goal', '1'); } catch (e) {} setTimeout(() => confetti($('.kid-hero'), ['#FFD60A', '#34C759', '#0A84FF', '#FF375F', info.color]), 500); }
     };
+    if (data.pet && data.pet.dead) return petGone(data);
+    if (!data.student.mascot_unlocked) return sleepingEgg(data);
     if (!data.student.mascot_hatched) return hatch(data, () => sapi('/student/me').then(render));
     render(data);
-    const refresh = () => sapi('/student/me').then(d => { data = d; if (pet && document.visibilityState === 'visible') render(d); }).catch(() => {});
+    const refresh = () => sapi('/student/me').then(d => { data = d; if (d.pet && d.pet.dead) return showStudent(); if (pet && document.visibilityState === 'visible') render(d); }).catch(() => {});
     const t = setInterval(refresh, 30000);
     const vis = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', vis);
     S.timers.push(() => { clearInterval(t); document.removeEventListener('visibilitychange', vis); });
+  }
+
+  const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>';
+
+  function lifeHtml(p, name) {
+    if (!p) return '';
+    const hearts = Array.from({ length: p.life }, (_, i) => `<i class="${i < p.health ? 'on' : ''}" style="--i:${i}">${HEART}</i>`).join('');
+    const msg = p.run === 0 ? `${esc(name)} tiene toda su energía.` : p.health === 1 ? `Último corazón: si faltas un día más sin justificar, ${esc(name)} se va.` : `${p.run} ${p.run === 1 ? 'falta seguida' : 'faltas seguidas'} sin justificar. Ven a clase y recupera todos los corazones.`;
+    return `<div class="kid-life ${p.health <= 2 ? 'low' : ''}"><div class="hearts" aria-label="${p.health} de ${p.life} corazones">${hearts}</div><b>${esc(p.label)}</b><small>${msg}</small></div>`;
+  }
+
+  function historyHtml(p) {
+    if (!p || !p.history || !p.history.length) return '';
+    return `<div class="group-title">Mascotas que te acompañaron</div><div class="kid-past">${p.history.map(h => { const i = mascotInfo(h.mascot); return `<div class="past"><span>${NaviBots.svg(mascotKey(h.mascot), 'sleepy')}</span><b>${esc(h.mascot_name || i.name)}</b><small>${h.punctual_days} ${h.punctual_days === 1 ? 'día' : 'días'} a tiempo</small></div>`; }).join('')}</div>`;
+  }
+
+  function petGone(data) {
+    const st = data.student;
+    const p = data.pet;
+    const info = mascotInfo(st.mascot);
+    const name = st.mascot_name || info.name;
+    const last = p.history[0] || {};
+    const fmt = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('es-EC', { day: 'numeric', month: 'long' }); } catch (e) { return d; } };
+    root.innerHTML = `
+      <div class="kid hatch gone-wrap" style="--pet:${info.color}">
+        <header class="kid-top" style="position:absolute;top:0;left:16px;right:16px"><div class="kid-brand">N.A.V.I</div><button class="btn btn-gray btn-sm" id="kidOut">Salir</button></header>
+        <div class="ghost-pet">${NaviBots.svg(mascotKey(st.mascot), 'sleepy')}</div>
+        <h1>${esc(name)} se fue</h1>
+        <p>Faltaste ${p.life} días de clase seguidos sin justificar y ${esc(name)} se cansó de esperarte. ${last.born_on ? `Te acompañó desde el ${esc(fmt(last.born_on))}` : 'Te acompañó'}${last.punctual_days ? ` y llegaron a tiempo ${last.punctual_days} ${last.punctual_days === 1 ? 'día' : 'días'}` : ''}.</p>
+        <div class="gone-note">${icon('info')}<span>Si alguna de esas faltas tiene justificación, pide a tu docente que la registre y ${esc(name)} vuelve.</span></div>
+        <div class="group-title" style="margin-top:22px">Elige un huevo nuevo</div>
+        <div class="egg-pick">${p.choices.map(i => `<button type="button" data-m="${i}" style="--egg:${mascotInfo(i).color}"><span class="mini-egg"></span><small>¿Quién saldrá?</small></button>`).join('')}</div>
+        <p class="foot" style="margin-top:14px">Tu nueva mascota empieza en el nivel 1. Tus logros se quedan contigo.</p>
+      </div>`;
+    $('#kidOut').addEventListener('click', e => confirmTap(e.currentTarget, '¿Salir?', () => studentLogout(false)));
+    $('.egg-pick').addEventListener('click', async e => {
+      const b = e.target.closest('[data-m]');
+      if (!b) return;
+      $$('.egg-pick button').forEach(x => { x.disabled = true; x.classList.toggle('picked', x === b); });
+      haptic(12);
+      SFX.play('tap');
+      try { await sapi('/student/adopt', { method: 'POST', body: { mascot: Number(b.dataset.m) } }); setTimeout(() => showStudent(), 450); } catch (err) { toast({ title: 'No se pudo', text: err.message, mood: 'sad' }); $$('.egg-pick button').forEach(x => { x.disabled = false; }); }
+    });
+    const t = setInterval(async () => { try { const d = await sapi('/student/me'); if (!d.pet.dead) { clearInterval(t); SFX.play('success'); showStudent(); } } catch (e) {} }, 30000);
+    S.timers.push(() => clearInterval(t));
+  }
+
+  function sleepingEgg(data) {
+    const st = data.student;
+    const info = mascotInfo(st.mascot);
+    root.innerHTML = `
+      <div class="kid hatch" style="--pet:${info.color}">
+        <header class="kid-top" style="position:absolute;top:0;left:16px;right:16px"><div class="kid-brand">N.A.V.I</div><button class="btn btn-gray btn-sm" id="kidOut">Salir</button></header>
+        <div class="kid-glow"></div>
+        <div class="egg sleeping"><div class="egg-shell"></div><span class="zz">z</span><span class="zz z2">z</span></div>
+        <h1>${esc(st.first_name)}, tu mascota está dormida en el huevo</h1>
+        <p>Acerca tu tarjeta al <b>lector del aula</b> para que nazca. Va a aparecer en la pantalla del lector.</p>
+        <div class="listen" style="margin-top:6px"><span class="pulse"></span>Esperando tu toque en el lector…</div>
+        <div id="eggDemo"></div>
+      </div>`;
+    $('#kidOut').addEventListener('click', e => confirmTap(e.currentTarget, '¿Salir?', () => studentLogout(false)));
+    const t = setInterval(async () => {
+      try { const d = await sapi('/student/me'); if (d.student.mascot_unlocked) { clearInterval(t); SFX.play('success'); showStudent(); } } catch (e) {}
+    }, 3000);
+    S.timers.push(() => clearInterval(t));
+    api('/student/demo-list').then(() => {
+      const d = $('#eggDemo');
+      if (!d) return;
+      d.innerHTML = '<button class="btn btn-tinted" id="eggSim" style="margin-top:16px">Simular el lector (versión de prueba)</button>';
+      $('#eggSim').addEventListener('click', async () => { try { await sapi('/student/demo-unlock', { method: 'POST' }); clearInterval(t); showStudent(); } catch (e) {} });
+    }).catch(() => {});
   }
 
   function hatch(data, after) {
@@ -2890,6 +3099,12 @@
       body: `
         <div class="notif-hero">${ico('shield', 'green')}<div><b>Credencial cifrada</b><small>Firma HMAC-SHA256 ligada al número de la tarjeta (${esc(st.nfc_uid)})</small></div></div>
         <div class="group">
+          <button type="button" class="cell has-icon" id="cReader">${ico('nfc', 'green')}<div class="grow"><div class="t b">Grabar con el lector del aula</div><div class="s">No necesita un celular con NFC</div></div>${icon('chevron', 'chev')}</button>
+          <button type="button" class="cell has-icon" id="cAssign">${ico('plus', 'blue')}<div class="grow"><div class="t">Tarjeta nueva con el lector</div><div class="s">Asigna una tarjeta en blanco o de reemplazo y la graba</div></div>${icon('chevron', 'chev')}</button>
+        </div>
+        <div id="cWait"></div>
+        <div class="group-title">Estado</div>
+        <div class="group">
           <div class="cell has-icon">${ico('nfc', 'blue')}<div class="grow"><div class="t">Credencial</div><div class="s">${acc.card_ver ? `Versión ${acc.card_ver}` : 'Aún no se ha grabado'}</div></div><span class="pill ${acc.card_ver ? 'p-ok' : 'p-none'}">${acc.card_ver ? 'Activa' : 'Sin grabar'}</span></div>
           <div class="cell has-icon">${ico('person', 'indigo')}<div class="grow"><div class="t">PIN del estudiante</div><div class="s">${acc.has_pin ? `Creado · ${acc.devices.length} ${acc.devices.length === 1 ? 'celular vinculado' : 'celulares vinculados'}` : 'Lo crea el estudiante la primera vez'}</div></div></div>
         </div>
@@ -2901,8 +3116,43 @@
         </div>
         <div id="cOut"></div>
         <p class="group-foot">La tarjeta guarda dos registros: un enlace (que cualquier celular abre para la ficha de emergencia) y la credencial firmada, que solo el servidor puede comprobar. Si alguien copia solo el número de la tarjeta, el lector del aula lo marca para revisión.</p>`,
+      onClose() {
+        if (S.writeWait) { api('/write-card', { method: 'DELETE' }).catch(() => {}); clearInterval(S.writeWait.timer); S.writeWait = null; }
+      },
       onMount(el) {
         const issue = async rotate => { const r = await api(`/students/${st.id}/credential`, { method: 'POST', body: { rotate } }); cred = r; return r; };
+        const wait = $('#cWait', el);
+        const arm = async assign => {
+          try {
+            const r = await api(`/students/${st.id}/write-card`, { method: 'POST', body: { assign } });
+            if (S.writeWait) clearInterval(S.writeWait.timer);
+            const until = Date.parse(r.until);
+            const paint = (msg, bad) => { wait.innerHTML = `<div class="write-wait ${bad ? 'bad' : ''}"><div class="ww-icon">${icon('nfc')}</div><div class="grow"><b>${assign ? 'Acerca la tarjeta nueva al lector' : `Acerca la tarjeta de ${esc(st.first_name)} al lector`}</b><small>${msg || 'Mantenla quieta sobre el lector hasta oír dos bips.'}</small></div><span class="ww-time" id="wwTime"></span><button type="button" class="btn btn-plain btn-sm" id="wwCancel">Cancelar</button></div>`; $('#wwCancel', el).addEventListener('click', stop); tick(); };
+            const tick = () => { const left = Math.max(0, Math.round((until - Date.now()) / 1000)); const t = $('#wwTime', el); if (t) t.textContent = left + ' s'; if (!left) stop(true); };
+            const stop = expired => { if (!S.writeWait) return; clearInterval(S.writeWait.timer); S.writeWait = null; api('/write-card', { method: 'DELETE' }).catch(() => {}); wait.innerHTML = expired === true ? stateBox(false, 'Se acabó el tiempo. Vuelve a intentarlo.') : ''; };
+            S.writeWait = {
+              studentId: st.id,
+              timer: setInterval(tick, 1000),
+              done(p) {
+                if (p.ok) {
+                  clearInterval(S.writeWait.timer);
+                  S.writeWait = null;
+                  wait.innerHTML = stateBox(true, `Tarjeta grabada${p.uid ? ` (UID ${esc(p.uid)})` : ''}. ${esc(st.first_name)} ya puede entrar con ella y el lector comprobará su firma.`);
+                  SFX.play('success');
+                  haptic([10, 40, 10]);
+                  loadStudents();
+                } else {
+                  paint(`No se grabó: ${esc(p.error || 'error')}. Vuelve a acercarla.`, true);
+                  SFX.play('warn');
+                }
+              }
+            };
+            paint();
+            SFX.play('open');
+          } catch (err) { wait.innerHTML = stateBox(false, esc(err.message)); }
+        };
+        $('#cReader', el).addEventListener('click', () => arm(false));
+        $('#cAssign', el).addEventListener('click', () => arm(true));
         const w = $('#cWrite', el);
         if (w) w.addEventListener('click', async () => {
           try {
@@ -2967,6 +3217,7 @@
   }
 
   async function boot() {
+    try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTimeout(bars, 60)); } catch (e) {}
     if (store.get('navi_student')) return showStudent();
     if (!S.token) return showAuth('login');
     try {

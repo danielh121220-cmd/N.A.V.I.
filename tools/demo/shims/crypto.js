@@ -32,3 +32,27 @@ exports.timingSafeEqual = (a, b) => {
   return r === 0;
 };
 exports.randomUUID = () => globalThis.crypto.randomUUID();
+exports.randomInt = (a, b) => {
+  const min = b === undefined ? 0 : a;
+  const max = b === undefined ? a : b;
+  const span = max - min;
+  const lim = Math.floor(4294967296 / span) * span;
+  const buf = new Uint32Array(1);
+  do globalThis.crypto.getRandomValues(buf); while (buf[0] >= lim);
+  return min + (buf[0] % span);
+};
+exports.createHash = () => {
+  const chunks = [];
+  const o = {
+    update(d) { chunks.push(bytes(d)); return o; },
+    digest(enc) {
+      const len = chunks.reduce((n, c) => n + c.length, 0);
+      const data = new Uint8Array(len);
+      let off = 0;
+      for (const c of chunks) { data.set(c, off); off += c.length; }
+      const out = Buffer.from(sha256(data));
+      return enc ? out.toString(enc) : out;
+    }
+  };
+  return o;
+};

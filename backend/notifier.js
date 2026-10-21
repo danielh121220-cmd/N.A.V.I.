@@ -12,7 +12,7 @@ function setListener(fn, upd) {
   if (upd) onUpdate = upd;
 }
 
-const URGENT = ['ABSENT', 'NOT_IN_CLASS', 'EMERGENCY'];
+const URGENT = ['ABSENT', 'ABSENT_STREAK', 'NOT_IN_CLASS', 'EMERGENCY'];
 const PROVIDERS = {
   gmail: { host: 'smtp.gmail.com', port: 587 },
   outlook: { host: 'smtp.office365.com', port: 587 },
@@ -164,6 +164,7 @@ const KIND_INFO = {
   LATE: { title: 'Llegada con atraso', short: 'Atraso', emoji: '⏰', color: '#C77700' },
   LATE_AFTER_ABSENT: { title: 'Llegó después del límite', short: 'Atraso', emoji: '⏰', color: '#C77700' },
   ABSENT: { title: 'No ha llegado a clases', short: 'Ausencia', emoji: '❗', color: '#D70015' },
+  ABSENT_STREAK: { title: 'Varios días seguidos sin asistir', short: 'Alerta de asistencia', emoji: '📌', color: '#D70015' },
   NOT_IN_CLASS: { title: 'No se encuentra en el aula', short: 'No está en el aula', emoji: '❗', color: '#D70015' },
   EMERGENCY: { title: 'Se abrió su ficha médica', short: 'Emergencia', emoji: '🚑', color: '#FF3B30' },
   CUSTOM: { title: 'Mensaje de la institución', short: 'Mensaje', emoji: '✉️', color: '#0A84FF' },
@@ -199,6 +200,10 @@ function compose(kind, s, course, att, custom) {
   if (kind === 'ABSENT') {
     lead = `${name} no ha registrado su ingreso a clases hoy.`;
     action = 'Si su representado está con usted o hay un error, comuníquese con la institución.';
+  }
+  if (kind === 'ABSENT_STREAK') {
+    lead = `${name} lleva 5 días de clase seguidos sin asistir y sin una justificación registrada.`;
+    action = 'Queremos ayudar. Por favor comuníquese con el DECE o con el tutor del curso. Si las faltas tienen justificación, puede presentarla en la institución.';
   }
   if (kind === 'NOT_IN_CLASS') {
     lead = `La tarjeta de ${name} se registró hoy, pero el docente confirmó que no está en el aula.`;

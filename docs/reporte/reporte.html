@@ -155,7 +155,7 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
     <li><b>Pase de lista por excepción.</b> El docente no llama a nadie: la lista ya viene marcada por las tarjetas y solo toca a quien no está en el aula. Así detecta en segundos una tarjeta que marcó sin que su dueño esté presente.</li>
     <li><b>Revisión en lugar de acusación.</b> El sistema nunca declara un fraude por sí solo. Marca el registro "para revisión" con el motivo y las fotos, y el docente decide.</li>
     <li><b>Funcionamiento local.</b> El servidor corre en la red del colegio. Si se cae el WiFi, el lector guarda cada registro con su hora y lo envía al volver la conexión.</li>
-    <li><b>Mascota privada y cooperativa.</b> Siguiendo la investigación sobre gamificación (Sailer y Homner, 2020) y las críticas a los rankings públicos de conducta (Manolev et al., 2019), la mascota solo la ve su dueño, nunca "muere" y no se ve afectada por faltas justificadas. La meta semanal es de todo el curso.</li>
+    <li><b>Mascota privada, con corazones y alerta temprana.</b> Siguiendo la investigación sobre gamificación (Sailer y Homner, 2020) y las críticas a los rankings públicos de conducta (Manolev et al., 2019), la mascota solo la ve su dueño y no hay ranking. Tiene 5 corazones: pierde uno por cada día de clase con falta sin justificar y los recupera todos con un solo día de asistencia. Si llega a 5 faltas seguidas (una semana de clases) se va, y ese mismo día el sistema avisa al representante con copia al DECE. Las faltas justificadas y los días sin clases no cuentan, y si el docente justifica una falta después, la mascota vuelve. La meta semanal es de todo el curso.</li>
   </ul>
 </section>
 
@@ -237,6 +237,7 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
     <tr><td>Disparo de cámara</td><td>GPIO 13 del ESP32-CAM</td><td>GPIO 25 (y GND común)</td></tr>
     <tr><td>VL53L0X (opcional)</td><td>VIN · GND · SDA · SCL</td><td>3.3V · GND · GPIO 21 · GPIO 22</td></tr>
   </table>
+  <figure><img src="img/conexiones.jpg" alt="Diagrama de conexiones"><figcaption>Figura 2. Diagrama de conexiones del terminal. El PN532, la OLED y el VL53L0X comparten el bus I2C (direcciones 0x24, 0x3C y 0x29); el ESP32-CAM tiene su propia fuente y comparte la tierra.</figcaption></figure>
   <h3>5.4 Software</h3>
   <table>
     <tr><th>Parte</th><th>Tecnología</th><th>Detalle</th></tr>
@@ -263,7 +264,8 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
     <li>Al detectar una tarjeta lee su UID, ignora la misma tarjeta sostenida durante 3 s, dispara la cámara por el GPIO 25 y muestra "LEYENDO".</li>
     <li>Si la tarjeta es NTAG (UID de 7 bytes) lee la memoria NDEF página por página y busca el registro de texto que empieza con <code>NAVI1.</code>.</li>
     <li>Envía por HTTP el UID, la credencial y la identificación del terminal. Si no hay red, guarda el registro con su hora real en un archivo de LittleFS y lo reenvía después.</li>
-    <li>Con la respuesta enciende el LED, toca el tono y escribe el saludo en la OLED.</li>
+    <li>Con la respuesta enciende el LED, toca el tono y escribe el saludo en la OLED. Si es el primer registro del estudiante, dibuja su mascota (mapa de bits de 32×32 enviado por el servidor) y el código de 6 números para entrar a la app.</li>
+    <li>Si el docente activó la grabación y la tarjeta es la del estudiante elegido, el servidor responde <code>GRABAR</code> con el mensaje NDEF ya armado. El lector lo escribe en las páginas 4 a 39, vuelve a leer la credencial, la compara con la esperada y avisa el resultado al servidor. Así ningún celular con NFC es necesario.</li>
   </ol>
   <pre>String readCredential(uint8_t uidLen) {
   if (uidLen != 7) return "";
@@ -279,6 +281,19 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
   return parseCredential(mem, n);
 }</pre>
   <p>La función lee como máximo 144 bytes (la memoria de usuario de una NTAG213) y se detiene en cuanto el mensaje NDEF está completo, para no demorar el registro. <code>parseCredential</code> recorre los bloques TLV y los registros NDEF (encabezado, longitud del tipo, longitud de los datos) y devuelve el texto de la credencial.</p>
+  <pre>String writeNdef(const char *hex) {
+  uint8_t data[144];
+  int n = hexToBytes(hex, data, sizeof(data));
+  if (n &lt;= 0) return "DATOS";
+  while (n % 4) data[n++] = 0x00;
+  for (int i = 0; i &lt; n; i += 4) {
+    uint8_t page = 4 + i / 4;
+    if (page &gt; 39) return "MUY GRANDE";
+    if (!nfc.ntag2xx_WritePage(page, data + i)) return "SE MOVIO";
+  }
+  return "";
+}</pre>
+  <p>Para grabar, el lector convierte el mensaje que envía el servidor de hexadecimal a bytes, lo completa a múltiplos de 4 y escribe una página de 4 bytes a la vez. Si la tarjeta se retira a mitad, la escritura falla y se avisa en la pantalla; después relee la credencial con <code>readCredential</code> y solo confirma si coincide.</p>
   <pre>void sendScan(const String &amp;uid, const String &amp;cred, bool ntag) {
   if (WiFi.status() != WL_CONNECTED) {
     queueOffline(uid, cred, ntag);
@@ -311,7 +326,7 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
   return { ok: true, student };
 }</pre>
   <h3>6.3 Aplicación</h3>
-  <p>La aplicación de docentes muestra el día en vivo, el pase de lista por excepción, la revisión con fotos, los estudiantes con su ficha médica, el simulador del lector y los ajustes de avisos. El portal del estudiante se abre acercando su tarjeta al celular: la primera vez pide crear un PIN y vincula ese celular. Después muestra su mascota, su estado de hoy, su semana, su nivel, sus logros y la meta del curso. En Android la lectura y grabación de tarjetas usa la API NFC nativa; en el navegador Chrome para Android usa Web NFC.</p>
+  <p>La aplicación de docentes muestra el día en vivo, el pase de lista por excepción, la revisión con fotos, los estudiantes con su ficha médica, el simulador del lector y los ajustes de avisos. La pantalla de inicio separa la cuenta del docente (correo y contraseña) de la del estudiante (solo su tarjeta). El estudiante entra de dos formas: con el código de un solo uso que muestra el lector del aula, que sirve en cualquier celular aunque no tenga NFC, o acercando su tarjeta a un celular con NFC. La primera vez pide crear un PIN y vincula ese celular; desde ahí la cuenta queda guardada, el lector ya no muestra códigos y la sesión se renueva sola durante el año lectivo. Antes de su primer toque en el lector, la mascota aparece como un huevo dormido. Si la mascota se va por cinco faltas seguidas, el estudiante ve una despedida y elige uno de tres huevos nuevos entre las mascotas libres de su curso; las anteriores quedan en su historial. El docente ve en Inicio una lista de alerta temprana con los estudiantes que llevan tres o más faltas seguidas sin justificar. Después muestra su mascota, su estado de hoy, su semana, su nivel, sus logros y la meta del curso. En Android la lectura y grabación de tarjetas usa la API NFC nativa; en el navegador Chrome para Android usa Web NFC.</p>
 </section>
 
 <section class="flow">
@@ -319,7 +334,7 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
   <h3>7.1 Pruebas realizadas</h3>
   <table>
     <tr><th>Prueba</th><th>Método</th><th>Resultado</th></tr>
-    <tr><td>Interfaz completa</td><td>7 recorridos automáticos con un navegador controlado por código (Playwright), en celular y computadora, modo claro y oscuro</td><td>Sin errores de página en todos los recorridos</td></tr>
+    <tr><td>Interfaz completa</td><td>9 recorridos automáticos con un navegador controlado por código (Playwright), en celular y computadora, modo claro y oscuro</td><td>Sin errores de página en todos los recorridos</td></tr>
     <tr><td>Tiempo de respuesta del servidor</td><td>225 registros con credencial firmada, medidos de extremo a extremo por HTTP en la misma máquina</td><td>Promedio 2,7 ms; percentil 95: 5,2 ms; máximo 19,7 ms</td></tr>
     <tr><td>Credencial falsificada</td><td>Credencial con firma inventada para un estudiante real</td><td>Rechazada: "La firma de la credencial no es válida"</td></tr>
     <tr><td>Credencial copiada a otra tarjeta</td><td>Credencial válida presentada con el UID de otro estudiante</td><td>Rechazada: "La credencial fue copiada de otra tarjeta"</td></tr>
@@ -327,14 +342,18 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
     <tr><td>PIN del estudiante</td><td>PIN incorrecto en un celular nuevo</td><td>Rechazado; bloqueo de 10 min tras 5 intentos</td></tr>
     <tr><td>Decodificador NDEF del firmware</td><td>Compilación del código C++ del lector en la PC con un mensaje NDEF real (enlace + texto, 92 bytes)</td><td>Credencial extraída correctamente, también con bloques TLV adicionales</td></tr>
     <tr><td>Correo</td><td>Servidor de correo de prueba local; contraseña incorrecta y correcta</td><td>Mensajes de error claros; correo recibido con copia al DECE</td></tr>
-    <tr><td>APK de Android</td><td>Verificación independiente de la firma (apksigtool) y análisis del archivo (androguard)</td><td>Firma APK v2 válida; paquete <code>ec.navi.app</code>, 594 KB</td></tr>
+    <tr><td>APK de Android</td><td>Verificación independiente de la firma (apksigtool) y análisis del archivo (androguard)</td><td>Firma APK v2 válida; paquete <code>ec.navi.app</code>, 936 KB</td></tr>
     <tr><td>Pase de lista</td><td>Confirmación de un curso de 6 estudiantes por la API</td><td>3 ms en el servidor</td></tr>
+    <tr><td>Grabación con el lector</td><td>Recorrido completo por HTTP como lo hace el firmware: activar, tocar, grabar y confirmar; también tarjeta nueva y tarjeta de otro estudiante durante la espera</td><td>Mensaje NDEF de 87 bytes; la tarjeta de otro estudiante marca asistencia normal; la tarjeta nueva queda asignada con nueva versión</td></tr>
+    <tr><td>Código de un solo uso</td><td>Código del lector usado dos veces, código inventado, código usado después de reiniciar el servidor y toques posteriores a crear la cuenta</td><td>Primer uso aceptado; segundo uso e inventado rechazados; el código sobrevive al reinicio; después de crear la cuenta el lector no muestra más códigos</td></tr>
+    <tr><td>Vida de la mascota</td><td>Faltas seguidas insertadas en la base de datos para varios estudiantes, con justificación y sin ella</td><td>3 faltas: 2 corazones; regreso: "ME SALVASTE!"; 5 faltas: se va y aparece en la alerta temprana; al justificar una falta vuelve; al elegir un huevo nuevo empieza en el nivel 1; sin cuenta, el lector entrega un huevo nuevo automáticamente; el aviso al representante se envía una sola vez</td></tr>
+    <tr><td>Escritor NDEF del firmware</td><td>Compilación en la PC de <code>writeNdef</code> con una memoria NTAG simulada y relectura con <code>readCredential</code></td><td>La credencial releída coincide con la grabada</td></tr>
   </table>
   <div class="kpis">
     <div class="kpi"><b>2,7 ms</b><small>Tiempo promedio del servidor por registro</small></div>
     <div class="kpi"><b>92 bytes</b><small>Enlace + credencial; caben en una NTAG213 (144 bytes)</small></div>
     <div class="kpi"><b>40</b><small>Mascotas distintas, una por estudiante de cada curso</small></div>
-    <div class="kpi"><b>594 KB</b><small>Tamaño del APK con la versión de prueba incluida</small></div>
+    <div class="kpi"><b>936 KB</b><small>Tamaño del APK con la versión de prueba incluida</small></div>
   </div>
   <h3>7.2 Mediciones en el aula</h3>
   <p class="fill">Completar con las mediciones del prototipo armado. Son el dato más valioso del reporte porque son propias y verificables.</p>
@@ -360,10 +379,10 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
   <h3>8.2 Impacto social</h3>
   <ul>
     <li><b>Familias:</b> se enteran el mismo día de un atraso o una ausencia, como pide el artículo 170 del Reglamento a la LOEI. La evidencia muestra que estos avisos mejoran la asistencia (Bergman y Chan, 2021).</li>
-    <li><b>Docentes:</b> recuperan minutos de clase y reciben evidencia cuando hay una duda, sin acusar a nadie de forma automática.</li>
+    <li><b>Docentes y DECE:</b> recuperan minutos de clase, reciben evidencia cuando hay una duda sin acusar a nadie de forma automática, y tienen una alerta temprana de los estudiantes que acumulan faltas seguidas, antes de que el problema crezca.</li>
     <li><b>Estudiantes:</b> la ficha médica puede orientar a quien los ayude en una emergencia (alergias graves, asma, diabetes) y su mascota convierte la puntualidad en algo positivo, privado y cooperativo.</li>
     <li><b>Privacidad:</b> no usa biometría, guarda solo lo necesario, pide el consentimiento del representante para la ficha médica y borra las fotos a los 7 días.</li>
-    <li><b>Inclusión:</b> funciona con cualquier celular para la ficha médica y no exige que los estudiantes tengan celular para registrar su asistencia.</li>
+    <li><b>Inclusión:</b> funciona con cualquier celular para la ficha médica, no exige celular para registrar la asistencia y el estudiante crea su cuenta con un código del lector, sin necesitar NFC en su teléfono.</li>
   </ul>
   <h3>8.3 Impacto ambiental</h3>
   <ul>
@@ -382,11 +401,12 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
     <li>El servidor responde en milisegundos, por lo que el tiempo por estudiante lo determina el lector y la red, no el procesamiento.</li>
     <li>La suplantación no se elimina, pero se vuelve detectable: el pase de lista por excepción, la cámara, el sensor de presencia y la credencial firmada producen evidencia para que el docente decida.</li>
     <li>Una sola tarjeta barata sirve para asistencia, emergencia médica e inicio de sesión, respetando la LOPDP al no usar datos biométricos.</li>
+    <li>El mismo lector graba las tarjetas y entrega códigos de un solo uso, así que ningún estudiante necesita un celular con NFC para usar el sistema.</li>
   </ul>
   <h3>Limitaciones</h3>
   <ul>
     <li>La credencial de una NTAG213 es estática: una persona con equipo especializado puede copiar la tarjeta completa a un chip que imite su UID. Por eso la revisión del docente sigue siendo la capa principal y se recomienda NTAG 424 DNA para una versión real.</li>
-    <li>El firmware se programó contra la documentación de las librerías y su decodificador NDEF se probó en la PC; la prueba final es en el prototipo físico.</li>
+    <li>El firmware se programó contra la documentación de las librerías y su lectura y escritura NDEF se probaron en la PC; la prueba final es en el prototipo físico.</li>
     <li>La aplicación Android se compiló y su firma se verificó, pero debe probarse en varios modelos de celular.</li>
     <li>La ficha médica muestra lo que el representante autorizó; no reemplaza la atención médica profesional.</li>
   </ul>
@@ -408,22 +428,22 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
     <div class="photo-slot">[Foto del proceso de montaje o de la carcasa]</div>
   </div>
   <h3>Anexo B. Capturas de la aplicación</h3>
-  <figure><img src="img/panel.jpg" alt="Panel del docente"><figcaption>Figura 2. Panel del docente en la computadora: anillos de asistencia, cursos, registros en vivo y avisos.</figcaption></figure>
+  <figure><img src="img/panel.jpg" alt="Panel del docente"><figcaption>Figura 3. Panel del docente en la computadora: anillos de asistencia, cursos, registros en vivo y avisos.</figcaption></figure>
   <figure class="phones">
-    <div><img src="img/lista.jpg" alt="Pase de lista"><figcaption>Figura 3. Pase de lista por excepción con las mascotas.</figcaption></div>
-    <div><img src="img/revision.jpg" alt="Revisión"><figcaption>Figura 4. Revisión de una tarjeta sin firma válida.</figcaption></div>
-    <div><img src="img/credencial.jpg" alt="Credencial"><figcaption>Figura 5. Grabación de la credencial cifrada.</figcaption></div>
+    <div><img src="img/lista.jpg" alt="Pase de lista"><figcaption>Figura 4. Pase de lista por excepción con las mascotas.</figcaption></div>
+    <div><img src="img/revision.jpg" alt="Revisión"><figcaption>Figura 5. Revisión de una tarjeta sin firma válida.</figcaption></div>
+    <div><img src="img/credencial.jpg" alt="Credencial"><figcaption>Figura 6. Grabación de la credencial cifrada.</figcaption></div>
   </figure>
   <figure class="phones">
-    <div><img src="img/pin.jpg" alt="PIN"><figcaption>Figura 6. Primer ingreso del estudiante con su tarjeta: creación del PIN.</figcaption></div>
-    <div><img src="img/nacimiento.jpg" alt="Nacimiento"><figcaption>Figura 7. Nace la mascota única del estudiante.</figcaption></div>
-    <div><img src="img/estudiante.jpg" alt="Portal"><figcaption>Figura 8. Portal del estudiante.</figcaption></div>
+    <div><img src="img/pin.jpg" alt="PIN"><figcaption>Figura 7. Primer ingreso del estudiante con su tarjeta: creación del PIN.</figcaption></div>
+    <div><img src="img/nacimiento.jpg" alt="Nacimiento"><figcaption>Figura 8. Nace la mascota única del estudiante.</figcaption></div>
+    <div><img src="img/estudiante.jpg" alt="Portal"><figcaption>Figura 9. Portal del estudiante.</figcaption></div>
   </figure>
-  <figure><img src="img/mascotas.jpg" alt="Mascotas"><figcaption>Figura 9. Las 40 mascotas: 40 formas y combinaciones de colores distintas.</figcaption></figure>
+  <figure><img src="img/mascotas.jpg" alt="Mascotas"><figcaption>Figura 10. Las 40 mascotas: 40 formas y combinaciones de colores distintas.</figcaption></figure>
   <figure class="phones">
-    <div><img src="img/ficha.jpg" alt="Ficha"><figcaption>Figura 10. Ficha de emergencia que ve quien acerca un celular a la tarjeta.</figcaption></div>
-    <div><img src="img/correo.jpg" alt="Correo"><figcaption>Figura 11. Aviso de ausencia por correo con copia al DECE.</figcaption></div>
-    <div><img src="img/whatsapp.jpg" alt="WhatsApp"><figcaption>Figura 12. Avisos por WhatsApp listos para enviar.</figcaption></div>
+    <div><img src="img/ficha.jpg" alt="Ficha"><figcaption>Figura 11. Ficha de emergencia que ve quien acerca un celular a la tarjeta.</figcaption></div>
+    <div><img src="img/correo.jpg" alt="Correo"><figcaption>Figura 12. Aviso de ausencia por correo con copia al DECE.</figcaption></div>
+    <div><img src="img/whatsapp.jpg" alt="WhatsApp"><figcaption>Figura 13. Avisos por WhatsApp listos para enviar.</figcaption></div>
   </figure>
   <h3>Anexo C. Señales del lector</h3>
   <table>
@@ -433,6 +453,12 @@ figcaption { font-size: 8.8pt; color: var(--soft); margin-top: 4pt; text-align: 
     <tr><td>Amarillo</td><td>REGISTRO EN REVISION</td><td>El docente debe revisarlo</td></tr>
     <tr><td>Amarillo</td><td>GUARDADO · SIN RED</td><td>Sin WiFi; se enviará después</td></tr>
     <tr><td>Rojo, tono grave</td><td>TARJETA NO REGISTRADA</td><td>Tarjeta desconocida</td></tr>
+    <tr><td>Verde</td><td>Mascota · NACIO LUMI! · CODIGO APP</td><td>Primer registro: nace la mascota y aparece el código para la app</td></tr>
+    <tr><td>Amarillo</td><td>YA MARCO 07:02</td><td>Ya había marcado hoy</td></tr>
+    <tr><td>Verde o amarillo</td><td>Mascota · ME SALVASTE!</td><td>Volvió después de dos o más faltas seguidas</td></tr>
+    <tr><td>Verde o amarillo</td><td>ELIGE MASCOTA</td><td>Su mascota se fue; debe elegir otra en la app</td></tr>
+    <tr><td>Verde, dos tonos</td><td>GRABADA · TARJETA LISTA</td><td>Tarjeta grabada y comprobada por el lector</td></tr>
+    <tr><td>Rojo</td><td>NO GRABO · SE MOVIO</td><td>La tarjeta se retiró antes de terminar</td></tr>
   </table>
   <h3>Anexo D. Código fuente</h3>
   <p>El código completo está en la carpeta del proyecto: <code>firmware/navi_esp32_pn532</code> (lector), <code>firmware/navi_esp32_cam</code> (cámara), <code>backend</code> (servidor y aplicación web) y <code>android</code> (aplicación Android). <span class="fill">[Agregar capturas del código abierto en Arduino IDE y del monitor serie.]</span></p>

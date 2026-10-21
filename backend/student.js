@@ -4,8 +4,12 @@ const { db } = require('./database');
 const auth = require('./auth');
 const C = require('./credential');
 const T = require('./time');
+const P = require('./pet');
+const M = require('./mascot');
 
-const DAYS = 30;
+const DAYS = 180;
+const RENEW_AFTER = 30;
+const CODE_HOURS = 12;
 const GOAL = 0.9;
 
 function sign(data) {
@@ -18,7 +22,7 @@ function createToken(studentId) {
   return `${payload}.${sign(payload)}`;
 }
 
-function readToken(token) {
+function tokenInfo(token) {
   if (!token || typeof token !== 'string') return null;
   const parts = token.split('.');
   if (parts.length !== 4 || parts[0] !== 'S') return null;
@@ -27,7 +31,19 @@ function readToken(token) {
   const b = Buffer.from(parts[3]);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   if (Number(parts[2]) < Date.now()) return null;
-  return Number(parts[1]);
+  return { id: Number(parts[1]), exp: Number(parts[2]) };
+}
+
+function readToken(token) {
+  const t = tokenInfo(token);
+  return t ? t.id : null;
+}
+
+function renewal(req) {
+  const header = req.headers.authorization || '';
+  const t = tokenInfo(header.startsWith('Bearer ') ? header.slice(7) : null);
+  if (!t) return null;
+  return t.exp - Date.now() < (DAYS - RENEW_AFTER) * 86400000 ? createToken(t.id) : null;
 }
 
 function requireStudent(req, res, next) {
@@ -64,7 +80,49 @@ function cardLogin(b) {
   if (deviceId.length < 16) return fail(400, 'Falta el identificador del dispositivo', 'DEVICE');
   const v = C.verify(b.cred, b.uid);
   if (!v.ok) return fail(401, C.REASON_TEXT[v.reason] || 'Credencial no válida', 'CRED_' + v.reason);
-  const s = v.student;
+  return finishLogin(v.student, b, deviceId);
+}
+
+const codeHash = code => crypto.createHmac('sha256', config.tokenSecret).update('code:' + code).digest('hex');
+const needsCode = s => Boolean(s && !s.pin_hash);
+
+function issueCode(studentId) {
+  db.q('DELETE FROM student_codes WHERE student_id = ? OR expires_at < ?').run(studentId, Date.now());
+  let code;
+  let hash;
+  do {
+    code = String(crypto.randomInt(100000, 1000000));
+    hash = codeHash(code);
+  } while (db.q('SELECT 1 FROM student_codes WHERE code_hash = ?').get(hash));
+  db.q('INSERT INTO student_codes (student_id, code_hash, expires_at) VALUES (?, ?, ?)').run(studentId, hash, Date.now() + CODE_HOURS * 3600000);
+  return code;
+}
+
+const codeFails = [];
+function codePaused() {
+  const now = Date.now();
+  while (codeFails.length && now - codeFails[0] > 15 * 60000) codeFails.shift();
+  return codeFails.length >= 25;
+}
+
+function codeLogin(b) {
+  const deviceId = String(b.device_id || '');
+  if (deviceId.length < 16) return fail(400, 'Falta el identificador del dispositivo', 'DEVICE');
+  if (codePaused()) return fail(429, 'Hubo muchos códigos equivocados. Espera 15 minutos o pide ayuda a tu docente.', 'LOCKED');
+  const code = String(b.code || '').replace(/\D/g, '');
+  const entry = code.length === 6 ? db.q('SELECT * FROM student_codes WHERE code_hash = ?').get(codeHash(code)) : null;
+  if (!entry || entry.expires_at < Date.now()) {
+    codeFails.push(Date.now());
+    return fail(401, 'Ese código no existe o ya venció. Acerca otra vez tu tarjeta al lector.', 'BAD_CODE');
+  }
+  const s = db.q('SELECT * FROM students WHERE id = ? AND active = 1').get(entry.student_id);
+  if (!s) return fail(401, 'Estudiante no encontrado', 'BAD_CODE');
+  const out = finishLogin(s, b, deviceId);
+  if (out.body && out.body.token) db.q('DELETE FROM student_codes WHERE student_id = ?').run(s.id);
+  return out;
+}
+
+function finishLogin(s, b, deviceId) {
   const known = db.q('SELECT id FROM student_devices WHERE student_id = ? AND device_hash = ?').get(s.id, deviceHash(deviceId));
   if (known) {
     bind(s, deviceId, b.device_label);
@@ -135,7 +193,9 @@ const BADGES = [
 ];
 
 function me(studentId) {
+  P.check(studentId);
   const s = db.q('SELECT * FROM students WHERE id = ?').get(studentId);
+  const pet = P.status(s);
   const course = db.q('SELECT * FROM courses WHERE id = ?').get(s.course_id);
   const today = T.localDate();
   const recs = db.q('SELECT * FROM attendances WHERE student_id = ? AND date >= ? ORDER BY date DESC').all(s.id, addDays(today, -120));
@@ -154,7 +214,8 @@ function me(studentId) {
     else if (k === 'JUSTIFICADO') continue;
     else break;
   }
-  const punctual = db.q("SELECT COUNT(*) AS c FROM attendances WHERE student_id = ? AND status = 'A_TIEMPO' AND (review_state IS NULL OR review_state != 'FRAUDE')").get(s.id).c;
+  const punctualAll = db.q("SELECT COUNT(*) AS c FROM attendances WHERE student_id = ? AND status = 'A_TIEMPO' AND (review_state IS NULL OR review_state != 'FRAUDE')").get(s.id).c;
+  const punctual = db.q("SELECT COUNT(*) AS c FROM attendances WHERE student_id = ? AND date >= ? AND status = 'A_TIEMPO' AND (review_state IS NULL OR review_state != 'FRAUDE')").get(s.id, s.mascot_born_on || '0000-00-00').c;
   const present = db.q("SELECT COUNT(*) AS c FROM attendances WHERE student_id = ? AND status IN ('A_TIEMPO','TARDE')").get(s.id).c;
   const startMin = T.hhmmToMinutes(course.schedule_start);
   const early = recs.filter(r => r.status === 'A_TIEMPO' && T.hhmmToMinutes(r.time_recorded.slice(0, 5)) <= startMin - 10).length;
@@ -166,9 +227,9 @@ function me(studentId) {
     racha_3: streak >= 3,
     racha_5: streak >= 5,
     madrugador: early >= 3,
-    puntual_10: punctual >= 10,
+    puntual_10: punctualAll >= 10,
     verificado: verified,
-    puntual_25: punctual >= 25
+    puntual_25: punctualAll >= 25
   };
   const monday = (() => {
     const wd = T.isoWeekday(new Date(today + 'T12:00:00'));
@@ -187,8 +248,16 @@ function me(studentId) {
   else if (k === 'JUSTIFICADO') { mood = 'sleepy'; line = 'Tu falta está justificada. Tu mascota también descansa.'; }
   else if (k === 'AUSENTE') { mood = 'sleepy'; line = 'Hoy te extrañamos en clase. Mañana es un nuevo día.'; }
   else if (!isSchoolToday) mood = 'sleepy';
+  const petName = s.mascot_name || M.name(s.mascot);
+  if (pet.dead) { mood = 'sleepy'; line = `${petName} se fue después de ${P.LIFE} días de clase sin verte.`; }
+  else if (k !== 'A_TIEMPO' && k !== 'TARDE' && pet.run >= 1) {
+    mood = pet.mood;
+    const left = P.LIFE - pet.run;
+    line = pet.run === 1 ? `${petName} te extrañó en la última clase. Te espera.` : left === 1 ? `${petName} está muy débil. Si faltas un día más sin justificar, se va.` : `${petName} está ${pet.label.toLowerCase()}: lleva ${pet.run} días de clase sin verte. Le quedan ${left} corazones.`;
+  }
   return {
-    student: { id: s.id, first_name: s.first_name, last_name: s.last_name, student_code: s.student_code, mascot: s.mascot, mascot_name: s.mascot_name, mascot_hatched: Boolean(s.mascot_hatched), course_name: course.name, schedule_start: course.schedule_start },
+    student: { id: s.id, first_name: s.first_name, last_name: s.last_name, student_code: s.student_code, mascot: s.mascot, mascot_name: s.mascot_name, mascot_hatched: Boolean(s.mascot_hatched), mascot_unlocked: Boolean(s.mascot_unlocked), course_name: course.name, schedule_start: course.schedule_start },
+    pet,
     today: { date: today, school: isSchoolToday, kind: k, time: todayRec ? todayRec.time_recorded.slice(0, 5) : null, verified: todayRec ? todayRec.card_verified === 1 : false },
     mood,
     line,
@@ -211,8 +280,15 @@ function update(studentId, b) {
   return me(studentId);
 }
 
+function adopt(studentId, index) {
+  const r = P.adopt(studentId, index);
+  if (r.error) return fail(400, r.error, 'ADOPT');
+  return { status: 200, body: me(studentId) };
+}
+
 function resetAccess(studentId) {
   db.q('UPDATE students SET pin_hash = NULL, pin_fails = 0, pin_locked_until = NULL WHERE id = ?').run(studentId);
+  db.q('DELETE FROM student_codes WHERE student_id = ?').run(studentId);
   db.q('DELETE FROM student_devices WHERE student_id = ?').run(studentId);
 }
 
@@ -222,4 +298,9 @@ function accessInfo(studentId) {
   return { card_ver: s ? s.card_ver : 0, has_pin: Boolean(s && s.pin_hash), devices };
 }
 
-module.exports = { requireStudent, cardLogin, demoLogin, me, update, resetAccess, accessInfo, readToken };
+function demoUnlock(studentId) {
+  db.q('UPDATE students SET mascot_unlocked = 1 WHERE id = ?').run(studentId);
+  return me(studentId);
+}
+
+module.exports = { requireStudent, cardLogin, codeLogin, issueCode, needsCode, renewal, adopt, demoLogin, demoUnlock, me, update, resetAccess, accessInfo, readToken };

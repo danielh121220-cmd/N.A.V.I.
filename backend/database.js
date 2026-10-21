@@ -151,7 +151,7 @@ function addColumns(table, defs) {
   const have = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
   for (const [name, def] of defs) if (!have.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`);
 }
-addColumns('students', [['mascot', 'INTEGER'], ['mascot_name', 'TEXT'], ['mascot_hatched', 'INTEGER NOT NULL DEFAULT 0'], ['card_ver', 'INTEGER NOT NULL DEFAULT 0'], ['pin_hash', 'TEXT'], ['pin_fails', 'INTEGER NOT NULL DEFAULT 0'], ['pin_locked_until', 'INTEGER']]);
+addColumns('students', [['mascot', 'INTEGER'], ['mascot_name', 'TEXT'], ['mascot_hatched', 'INTEGER NOT NULL DEFAULT 0'], ['card_ver', 'INTEGER NOT NULL DEFAULT 0'], ['pin_hash', 'TEXT'], ['pin_fails', 'INTEGER NOT NULL DEFAULT 0'], ['pin_locked_until', 'INTEGER'], ['mascot_unlocked', 'INTEGER NOT NULL DEFAULT 0'], ['mascot_born_on', 'TEXT'], ['mascot_dead_on', 'TEXT']]);
 addColumns('attendances', [['card_verified', 'INTEGER'], ['justified', 'INTEGER NOT NULL DEFAULT 0'], ['justification', 'TEXT'], ['justified_by', 'INTEGER'], ['justified_at', 'TEXT']]);
 db.exec(`CREATE TABLE IF NOT EXISTS student_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,6 +161,23 @@ db.exec(`CREATE TABLE IF NOT EXISTS student_devices (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen TEXT,
   UNIQUE(student_id, device_hash)
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS student_codes (
+  student_id INTEGER PRIMARY KEY REFERENCES students(id),
+  code_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS mascot_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL REFERENCES students(id),
+  mascot INTEGER NOT NULL,
+  mascot_name TEXT,
+  born_on TEXT,
+  died_on TEXT NOT NULL,
+  punctual_days INTEGER NOT NULL DEFAULT 0,
+  absences INTEGER NOT NULL DEFAULT 0
 )`);
 
 const MASCOT_COUNT = 40;

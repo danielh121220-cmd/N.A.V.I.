@@ -56,6 +56,35 @@ function issue(studentId, rotate) {
   return { cred: make(s), ver: s.card_ver, uid: s.nfc_uid };
 }
 
+const URI_PREFIXES = [['https://www.', 2], ['http://www.', 1], ['https://', 4], ['http://', 3]];
+
+function record(flags, type, payload) {
+  const short = payload.length < 256;
+  const head = Buffer.from([flags | (short ? 0x10 : 0) | 0x01, type.length]);
+  const len = short ? Buffer.from([payload.length]) : Buffer.from([(payload.length >>> 24) & 255, (payload.length >>> 16) & 255, (payload.length >>> 8) & 255, payload.length & 255]);
+  return Buffer.concat([head, len, Buffer.from(type, 'ascii'), payload]);
+}
+
+function ndefHex(url, text) {
+  let code = 0;
+  let rest = String(url || '');
+  for (const [p, c] of URI_PREFIXES) {
+    if (rest.startsWith(p)) {
+      code = c;
+      rest = rest.slice(p.length);
+      break;
+    }
+  }
+  const uri = Buffer.concat([Buffer.from([code]), Buffer.from(rest, 'utf8')]);
+  const lang = Buffer.from('es', 'ascii');
+  const txt = Buffer.concat([Buffer.from([lang.length]), lang, Buffer.from(String(text || ''), 'utf8')]);
+  const msg = Buffer.concat([record(0x80, 'U', uri), record(0x40, 'T', txt)]);
+  const tlv = msg.length < 255 ? Buffer.from([0x03, msg.length]) : Buffer.from([0x03, 0xff, msg.length >> 8, msg.length & 255]);
+  const all = Buffer.concat([tlv, msg, Buffer.from([0xfe])]);
+  if (all.length > 144) throw new Error(`El enlace y la credencial ocupan ${all.length} bytes y una NTAG213 guarda 144. Usa una dirección más corta.`);
+  return all.toString('hex').toUpperCase();
+}
+
 const REASON_TEXT = {
   FORMATO: 'La tarjeta no tiene una credencial de N.A.V.I',
   DESCONOCIDO: 'La credencial es de un estudiante que no existe',
@@ -64,4 +93,4 @@ const REASON_TEXT = {
   REVOCADA: 'Esta credencial fue reemplazada por una nueva'
 };
 
-module.exports = { make, verify, issue, parse, cleanUid, REASON_TEXT, PREFIX };
+module.exports = { make, verify, issue, parse, cleanUid, ndefHex, REASON_TEXT, PREFIX };

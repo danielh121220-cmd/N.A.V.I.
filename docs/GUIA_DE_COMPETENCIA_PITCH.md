@@ -19,14 +19,14 @@
 
 | Criterio | Qué mostrar o decir |
 | --- | --- |
-| **Originalidad** | La misma tarjeta sirve para tres cosas: asistencia, ficha médica de emergencia e inicio de sesión del estudiante. Mascota única por estudiante. Revisión con evidencia en lugar de acusación automática. |
+| **Originalidad** | La misma tarjeta sirve para tres cosas: asistencia, ficha médica de emergencia e inicio de sesión del estudiante. Mascota única por estudiante que nace en la pantalla del lector. Revisión con evidencia en lugar de acusación automática. |
 | **Funcionalidad** | Demo en vivo (sección 3): puntual, atraso, tarjeta copiada, pase de lista, ficha médica. Ten el video de respaldo listo. |
-| **Innovación tecnológica** | Credencial firmada con HMAC-SHA256 ligada al número de la tarjeta; el lector la lee de la memoria NDEF. App Android con NFC nativo. Modo sin conexión con cola local. |
-| **Estética y diseño** | Carcasa ordenada, cables cortos y etiquetados, lector a la altura del pecho. App con diseño cuidado, modo oscuro y mascotas. |
+| **Innovación tecnológica** | Credencial firmada con HMAC-SHA256 ligada al número de la tarjeta; el mismo PN532 la graba y la lee de la memoria NDEF, y comprueba lo grabado. Código de un solo uso para entrar sin NFC. App Android con NFC nativo. Modo sin conexión con cola local. |
+| **Estética y diseño** | Carcasa propia impresa en 3D, igual a la del video (`hardware/cad`), con panel negro para la pantalla y símbolo NFC grabado. Llaveros NFC con el logo y el nombre del estudiante. App con diseño cuidado, modo oscuro y mascotas. |
 | **Eficiencia** | El servidor responde en 2,7 ms en promedio. El lector no se bloquea: lee, envía y responde en menos de un segundo. Consumo menor a 1 W. |
 | **Aplicación del proyecto** | La LOEI obliga a registrar la asistencia y a avisar de inmediato a los representantes (arts. 169 y 170). N.A.V.I hace justo eso, y permite justificar faltas. |
 | **Impacto ambiental** | Sin hojas de lista ni citaciones impresas (unas 6.000 hojas al año en un colegio de 30 cursos). Tarjetas reutilizables por años. Módulos reemplazables, no desechables. |
-| **Impacto social** | Avisar a las familias mejora la asistencia (Bergman y Chan, 2021: +12 %). Ficha médica para emergencias. Sin biometría de menores. Mascota privada que no castiga. |
+| **Impacto social** | Avisar a las familias mejora la asistencia (Bergman y Chan, 2021: +12 %). Alerta temprana: con 3 faltas seguidas sin justificar el estudiante aparece en Inicio, y con 5 se avisa al representante y al DECE. Ficha médica para emergencias. Sin biometría de menores. |
 | **Exposición y defensa** | Usa el guion de abajo, reparte las partes entre los dos y responde con datos. Nunca prometas "imposible de hackear". |
 | **Reporte técnico** | Completa nombres, fotos del prototipo y la tabla de mediciones en el aula (capítulo 7.2). Revisa que todas las citas estén en las referencias. |
 
@@ -39,7 +39,7 @@ Antes de empezar: abre la app en la laptop, entra con la cuenta del docente, ve 
 3. **Tarjeta copiada.** En **Terminal → Casos especiales → Tarjeta copiada**: el registro aparece en **Revisión** con el motivo "puede ser una copia de la tarjeta". Explica la firma HMAC.
 4. **Dos tarjetas seguidas.** Pasa dos tarjetas en menos de 1,5 s: queda en revisión con las fotos de la cámara.
 5. **Pase de lista por excepción.** Abre **Pase de lista**, toca a quien no está y confirma.
-6. **La mascota.** Con el celular Android y la app N.A.V.I: **Soy estudiante → Leer mi tarjeta**. Crea el PIN, nace la mascota y se ve su semana y su nivel.
+6. **La mascota, sin celular con NFC.** Pasa por primera vez una tarjeta nueva: el lector muestra la mascota y "NACIO LUMI! · CODIGO APP". En cualquier celular (mejor un iPhone, para que se note): **Estudiante → Usar el lector del aula**, escribe el código, crea el PIN y la mascota sale del huevo. Vuelve a pasar la tarjeta: ya no sale código, porque la cuenta quedó guardada. Muestra los corazones y, en la cuenta del docente, **Inicio → Alerta temprana**. Antes de la demo, graba una tarjeta con **Grabar con el lector del aula** delante del jurado: 2 segundos.
 7. **Ficha médica (el cierre).** Acerca cualquier celular a la tarjeta de Mateo: se abre su ficha con la alergia grave a la penicilina. En la laptop aparece "Ficha médica abierta". Frase final: *"La misma tarjeta que marca asistencia puede salvar una vida."*
 
 **Plan B:** si falla el WiFi del evento, la demo sigue con el simulador de la app (Terminal) y con la versión de prueba de la app, que no necesita servidor. Lleva también un video de la demo grabado en casa.
@@ -62,6 +62,9 @@ Antes de empezar: abre la app en la laptop, entra con la cuenta del docente, ve 
 **¿Se puede clonar la tarjeta?**
 "Las MIFARE Classic se copian en segundos; por eso usamos NTAG213. Además grabamos una credencial firmada con HMAC-SHA256 ligada al número de la tarjeta y a una versión. Sin la clave del servidor no se puede fabricar una credencial, no sirve en otra tarjeta y la anulamos si se pierde. Alguien con equipo especializado podría copiar la tarjeta completa a un chip que imite el número; por eso la revisión del docente sigue siendo la capa principal, y la versión 2 usa NTAG 424 DNA, que genera un código distinto en cada toque con AES-128."
 
+**¿Y los estudiantes que no tienen celular con NFC?**
+"No lo necesitan. El mismo lector del aula graba la tarjeta, y al marcar muestra un código de 6 números que sirve una vez y vence en 5 minutos. Con ese código entran desde cualquier celular, incluso un iPhone. El código solo aparece cuando la tarjeta física está sobre el lector."
+
 **¿Qué es exactamente esa "clave encriptada"?**
 "Es una firma, no un texto cifrado. El servidor calcula un HMAC-SHA256 del código del estudiante, el número de la tarjeta y la versión, con una clave secreta que nunca sale del servidor. El lector la lee de la memoria NDEF y la envía; el servidor recalcula la firma y la compara en tiempo constante."
 
@@ -74,8 +77,11 @@ Antes de empezar: abre la app en la laptop, entra con la cuenta del docente, ve 
 **¿Y si se cae el internet o el WiFi?**
 "El servidor está en la red del colegio, no en la nube. Si se cae el WiFi, el lector guarda cada registro con su hora en su memoria (LittleFS) y lo envía cuando vuelve la conexión. El servidor rechaza registros con más de 72 horas para evitar trampas."
 
-**¿La mascota no presiona a los estudiantes?**
-"La diseñamos con lo que dice la investigación: es privada, sin ranking público, nunca muere ni se pone triste por una falta justificada, y la meta semanal es del curso completo, no individual."
+**¿La mascota no presiona a los estudiantes? ¿Por qué se muere?**
+"La mascota tiene 5 corazones y pierde uno por cada día de clase que el estudiante falta sin justificación. Con un solo día de asistencia los recupera todos. Solo se va después de una semana entera de clases sin venir, que es justo cuando el colegio debe actuar: ese mismo día se avisa al representante y al DECE. Para que no sea un castigo injusto: es privada y no hay ranking, avisa antes con los corazones, las faltas justificadas no cuentan, los feriados no cuentan, y si el docente justifica una falta después, la mascota vuelve. Si se va, el estudiante elige un huevo nuevo de inmediato y conserva sus logros."
+
+**¿Y el código de 6 números no es inseguro?**
+"Solo aparece hasta que el estudiante crea su cuenta, sirve una vez y vence en 12 horas. Solo se ve en la pantalla cuando la tarjeta física está en el lector. El servidor guarda el código cifrado (HMAC), limita los intentos por equipo y pausa el ingreso por código si hay muchos intentos fallidos. Después de crear la cuenta, el lector ya no muestra códigos."
 
 **¿Cuánto cuesta y quién lo paga?**
 "Entre 30 y 45 dólares por aula sin cámara y entre 45 y 65 con cámara. Las tarjetas cuestan menos de un dólar y se reutilizan por años. El servidor corre en una computadora que el colegio ya tiene."

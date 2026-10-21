@@ -88,3 +88,32 @@
 | Las listas usaban iniciales cuando no había foto. | Cada estudiante tiene una de 40 mascotas únicas en su curso. |
 | La app solo se podía usar desde el navegador. | App de Android con NFC nativo para leer y grabar tarjetas. |
 | Un correo de prueba con el servidor caído tardaba 19 s en responder por los reintentos. | La prueba no reintenta; los avisos reales sí. |
+
+## Ronda 6
+
+| Problema | Corrección |
+| --- | --- |
+| Grabar la credencial exigía un celular con NFC, y muchos estudiantes y docentes no tienen. | El lector del aula (PN532) graba la tarjeta: el docente lo activa desde la app y el estudiante deja la tarjeta quieta hasta oír dos bips. El lector relee lo grabado antes de confirmar. |
+| Un estudiante sin celular con NFC no podía entrar a la app. | Al marcar en el lector aparece un código de 6 números que vence en 5 minutos y sirve una sola vez. Funciona en cualquier celular, también en iPhone. |
+| La mascota aparecía solo en la app. | El primer toque en el lector muestra la mascota en la pantalla OLED: "NACIO LUMI!". |
+| La cuenta del estudiante se mezclaba con la del docente en la misma pantalla. | La pantalla de inicio tiene dos cuentas separadas, Docente y Estudiante, y recuerda la última que se usó. |
+| Mientras se esperaba una grabación, el resto del curso no podía marcar. | Solo la tarjeta del estudiante elegido se graba; las demás marcan asistencia normal. |
+| Una tarjeta MIFARE Classic dejaba la grabación a medias. | El lector la detecta y pide una NTAG213 o NTAG215. |
+| El lector mostraba un código nuevo en cada toque, aunque el estudiante ya tuviera cuenta. | El código aparece solo hasta que el estudiante crea su cuenta. Se guarda cifrado en la base de datos (sobrevive a un reinicio del servidor) y la sesión dura todo el año. |
+| Faltar no tenía ninguna consecuencia en la mascota ni avisaba de un posible abandono. | La mascota tiene 5 corazones; con 5 faltas seguidas sin justificar se va, el estudiante elige otra y se avisa al representante y al DECE. El docente ve una alerta temprana desde 3 faltas. |
+| Un feriado con el servidor encendido marcaba a todos como ausentes y habría quitado corazones. | Un día solo cuenta si al menos un estudiante del curso asistió. |
+
+## Ronda 7 (app de Android y medidas reales)
+
+| Problema | Corrección |
+| --- | --- |
+| En Android el texto no se parecía al de un iPhone: Android no trae la letra San Francisco y usaba Roboto. | La app incluye la letra Inter (libre, licencia OFL), la más cercana a San Francisco. Inter Display para títulos y Inter para el texto. |
+| En el celular el texto era pequeño (15 px). | En celulares el texto sube a 17 px, el tamaño de iOS, con el mismo espaciado entre letras. |
+| La flecha atrás de Android cerraba la app aunque hubiera una hoja abierta. | Primero cierra la hoja; después vuelve a la pantalla anterior; si no hay más, deja la app en segundo plano sin cerrarla. |
+| La barra de estado y la de navegación quedaban de otro color al cambiar entre modo claro y oscuro. | Las dos barras toman el color del fondo (#F2F2F7 o negro) y cambian al instante con el tema. |
+| Al abrir la app se veía un destello blanco en modo oscuro. | Tema de Android propio, claro y oscuro, con el fondo correcto desde el primer cuadro. |
+| La vibración no funcionaba en la app de Android. | Vibración nativa corta en cada botón. |
+| Con letra grande en el sistema, la app se desarmaba; también se podía hacer zoom por error. | El tamaño de letra del sistema se respeta hasta 118 % y el zoom con dos dedos está desactivado. |
+| En Ajustes, "Cursos y horarios" quedaba encima del nombre del curso. | Se corrigió el margen negativo. |
+| En pantallas de 360 px los días de la semana tapaban la palabra "Días" y varios textos se cortaban con "…". | Botones de días más pequeños en pantallas angostas y los subtítulos pasan a dos líneas, como en Ajustes de iPhone. |
+| Las medidas de los módulos en la carcasa eran aproximadas. | Se usaron las medidas de las hojas de datos (PN532 43 × 41 mm, ESP32 52 × 28,3 mm, ESP32-CAM 27 × 40,5 mm…) y se comprobó en Fusion que no chocan: 0 interferencias. |

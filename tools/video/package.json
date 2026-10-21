@@ -1,0 +1,8 @@
+{
+  "name": "navi-video",
+  "private": true,
+  "dependencies": {
+    "playwright": "1.48.2",
+    "three": "0.169.0"
+  }
+}

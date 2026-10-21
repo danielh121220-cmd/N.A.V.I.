@@ -4,3 +4,6 @@ backend/.env
 *.sqlite*
 tools/demo/dist/
 NAVI.apk
+tools/video/prev/
+tools/video/audio.wav
+tools/video/node_modules/

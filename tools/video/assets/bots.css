@@ -1,0 +1,39 @@
+.bot { width: 100%; height: 100%; overflow: visible; display: block; }
+.bot .bot-wrap { transform-box: fill-box; transform-origin: 50% 100%;  }
+.bot .eye-inner { transform-box: fill-box; transform-origin: center;  }
+.bot .eye-open { fill: var(--bot-ink, #fff);  }
+.bot .eye-happy, .bot .eye-closed { fill: none; stroke: var(--bot-ink, #fff); stroke-width: 3; stroke-linecap: round; opacity: 0;  }
+.bot .brow { fill: none; stroke: var(--bot-ink, #fff); stroke-width: 2.6; stroke-linecap: round; opacity: 0;  }
+.bot .mouth { fill: none; stroke: var(--bot-ink, #fff); stroke-width: 2.4; stroke-linecap: round; opacity: 0;  }
+.bot .mouth-o { fill: var(--bot-ink, #fff); stroke: none; }
+.bot .blush { fill: #FF8FA3; opacity: 0;  }
+.bot.blink .eye-inner { transform: scaleY(0.08); }
+.bot.mood-happy .eye-open, .bot.mood-wink .bot-eye-r .eye-open { opacity: 0; }
+.bot.mood-happy .eye-happy, .bot.mood-wink .bot-eye-r .eye-happy { opacity: 1; }
+.bot.mood-happy .mouth-smile, .bot.mood-wink .mouth-smile { opacity: 1; }
+.bot.mood-happy .blush, .bot.mood-wink .blush, .bot.mood-shy .blush { opacity: 0.85; }
+.bot.mood-angry .brow-angry { opacity: 1; }
+.bot.mood-angry .eye-inner { transform: scaleY(0.62); }
+.bot.mood-angry .mouth-frown { opacity: 1; }
+.bot.mood-sad .brow-sad, .bot.mood-worried .brow-sad { opacity: 1; }
+.bot.mood-sad .eye-inner { transform: scaleY(0.78); }
+.bot.mood-sad .mouth-frown { opacity: 1; }
+.bot.mood-worried .mouth-flat { opacity: 1; }
+.bot.mood-confused .bot-eye-l .eye-inner { transform: scaleY(0.6); }
+.bot.mood-confused .bot-eye-r .brow-sad { opacity: 1; }
+.bot.mood-confused .mouth-flat { opacity: 1; }
+.bot.mood-confused .bot-wrap { transform: rotate(7deg); }
+.bot.mood-surprised .eye-inner { transform: scale(1.18); }
+.bot.mood-surprised .mouth-o { opacity: 1; }
+.bot.mood-shy .eye-open, .bot.mood-sleepy .eye-open { opacity: 0; }
+.bot.mood-shy .eye-closed, .bot.mood-sleepy .eye-closed { opacity: 1; }
+.bot.mood-shy .bot-wrap { transform: rotate(-6deg); }
+.bot.mood-peek .bot-eye-l .eye-open { opacity: 0; }
+.bot.mood-peek .bot-eye-l .eye-closed { opacity: 1; }
+.bot.mood-peek .blush { opacity: 0.6; }
+.bot.mood-thinking .bot-eye-l .eye-inner { transform: scaleY(0.85); }
+.bot.mood-sleepy .bot-wrap { animation: breathe 3.2s ease-in-out infinite; }
+.bot.anim-shake .bot-wrap { animation: shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+.bot.anim-hop .bot-wrap { animation: hop 0.5s var(--spring); }
+.bot.anim-squish .bot-wrap { animation: squish 0.42s var(--spring); }
+@keyframes shake { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(3px); } 30%, 50%, 70% { transform: translateX(-5px); } 40%, 60% { transform: translateX(5px); } }
