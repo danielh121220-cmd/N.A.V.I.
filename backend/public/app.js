@@ -88,7 +88,7 @@
     { id: 'lista', label: 'Pase de lista', short: 'Lista', icon: 'list', color: 'green' },
     { id: 'revision', label: 'Revisión', icon: 'shield', color: 'purple' },
     { id: 'alumnos', label: 'Estudiantes', short: 'Alumnos', icon: 'users', color: 'orange' },
-    { id: 'terminal', label: 'Terminal', icon: 'cpu', color: 'graphite' },
+    { id: 'terminal', label: 'Lector', icon: 'cpu', color: 'graphite' },
     { id: 'ajustes', label: 'Ajustes', icon: 'settings', color: 'gray' }
   ];
 
@@ -99,7 +99,7 @@
   };
   const SOURCE = { NFC: 'Tarjeta', MANUAL: 'Docente', AUTO: 'Automático', OFFLINE: 'Sin conexión' };
   const KIND = { ARRIVAL: 'Ingreso', LATE: 'Atraso', ABSENT: 'Ausencia', LATE_AFTER_ABSENT: 'Llegó tarde', NOT_IN_CLASS: 'No está en el aula', EMERGENCY: 'Ficha médica abierta', ABSENT_STREAK: '5 faltas seguidas', CUSTOM: 'Mensaje' };
-  const NSTATUS = { ENVIADO: ['Enviado', 'p-ok'], MANUAL: ['Enviado', 'p-ok'], FALLIDO: ['Falló', 'p-abs'], SIMULADO: ['Simulado', 'p-none'], ENLACE: ['Por enviar', 'p-info'] };
+  const NSTATUS = { ENVIADO: ['Enviado', 'p-ok'], MANUAL: ['Enviado', 'p-ok'], FALLIDO: ['Falló', 'p-abs'], SIMULADO: ['Sin enviar', 'p-none'], ENLACE: ['Por enviar', 'p-info'] };
   const CHANNEL = { EMAIL: ['Correo', 'mail', 'blue'], WHATSAPP: ['WhatsApp', 'chat', 'green'], TELEGRAM: ['Telegram', 'send', 'teal'] };
   const PALETTE = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#30B0C7', '#5856D6', '#FF3B30', '#A2845E', '#00C7BE'];
 
@@ -386,6 +386,7 @@
           <div class="auth-bot" id="authBot" title="Tócame"></div>
           <h1>N.A.V.I</h1>
           <p class="lead" id="authLead">Asistencia escolar con NFC</p>
+          <div class="demo-tag hidden" id="demoTag">${icon('bolt')} Modo demostración</div>
           <div id="teacherPane">
           <div class="bubble" id="bubble">${esc(BOT_LINES[saved])}</div>
           <div class="bot-picker" id="picker">${NaviBots.KEYS.map(k => `<button type="button" class="bot-pick ${k === saved ? 'on' : ''}" data-bot="${k}" aria-label="${NaviBots.CHARACTERS[k].name}">${NaviBots.svg(k)}</button>`).join('')}</div>
@@ -402,8 +403,8 @@
             <p class="group-foot reg-only">Mínimo 6 caracteres. La primera cuenta creada será la administradora.</p>
             <button class="btn btn-primary btn-lg btn-block" id="authSubmit" style="margin-top:16px">Entrar</button>
           </form>
-          <button type="button" class="btn btn-plain btn-block" id="demoBtn" style="margin-top:6px">Probar con la cuenta demo</button>
-          <p class="foot">Tus datos se quedan en el servidor de tu colegio.</p>
+          <button type="button" class="btn btn-plain btn-block hidden" id="demoBtn" style="margin-top:6px">Entrar a la cuenta de demostración</button>
+          <p class="foot" id="authFoot">Tus datos se quedan en el servidor de tu colegio.</p>
           </div>
           <div id="studentPane" class="hidden">
             <div class="kid-trio">${[3, 0, 5].map((i, n) => `<span style="--d:${n * 90}ms">${NaviBots.svg(mascotKey(i), 'happy')}</span>`).join('')}</div>
@@ -612,7 +613,7 @@
       $('#authBot').classList.toggle('hidden', role === 'student');
       $('#authLead').textContent = role === 'student' ? 'Entra con tu tarjeta NFC' : 'Asistencia escolar con NFC';
       if (!quiet) haptic(6);
-      if (role === 'student' && !studentPane.dataset.demo) {
+      if (role === 'student' && S.demo && !studentPane.dataset.demo) {
         studentPane.dataset.demo = '1';
         api('/student/demo-list').then(list => {
           const d = $('#kidDemo');
@@ -631,6 +632,22 @@
     $('#kidReader').addEventListener('click', () => openCodeLogin());
     const kp = $('#kidPhone');
     if (kp) kp.addEventListener('click', () => openStudentLogin());
+    api('/info').then(info => {
+      S.demo = !!info.demo_mode;
+      if (!$('#demoBtn')) return;
+      $('#demoBtn').classList.toggle('hidden', !S.demo);
+      $('#demoTag').classList.toggle('hidden', !S.demo);
+      if (S.demo) {
+        $('#authFoot').textContent = 'Todos los datos de esta versión son de ejemplo.';
+        if (store.get('navi_role') === 'student') { delete studentPane.dataset.demo; setRole('student', true); }
+      }
+      if (info.setup && !S.demo) {
+        setMode('register');
+        $('#authSeg').classList.add('hidden');
+        $('#authLead').textContent = 'Primer uso: crea la cuenta del administrador';
+        say('¡Bienvenido! Esta será la cuenta principal del colegio.');
+      }
+    }).catch(() => {});
     $('#demoBtn').addEventListener('click', async () => {
       bot.setBase('thinking');
       say('Preparando la demo…');
@@ -1331,7 +1348,7 @@
       body: `
         <form id="mailForm" novalidate autocomplete="off">
           <div class="notif-hero">${ico('mail', 'blue')}<div><b>Correo a representantes</b><small>Avisos con diseño, copia a la institución y respuesta al DECE</small></div></div>
-          <div id="mailState">${c.mail_source ? stateBox(true, `Enviando desde <b>${esc(c.mail_user)}</b>${fromEnv ? ' (configurado en backend/.env)' : ''}`) : stateBox(false, 'Aún no está configurado: los avisos por correo se simulan.')}</div>
+          <div id="mailState">${c.mail_source ? stateBox(true, `Enviando desde <b>${esc(c.mail_user)}</b>${fromEnv ? ' (configurado en backend/.env)' : ''}`) : stateBox(false, S.demo ? 'Aún no está configurado: los avisos por correo se simulan.' : 'Aún no está configurado: los avisos por correo no se envían hasta que lo configures.')}</div>
           <div class="group-title">Cuenta que envía</div>
           <div style="margin-bottom:10px" id="provSeg">${segHtml([['gmail', 'Gmail'], ['outlook', 'Outlook'], ['custom', 'Otro']], prov === 'yahoo' ? 'custom' : prov, 'mailProv')}</div>
           <div class="group">
@@ -1565,12 +1582,29 @@
 
   const VIEWS = {};
 
+  function setupHtml() {
+    if (S.demo || store.get('navi_setup_hide') === '1') return '';
+    const steps = [
+      [S.courses.length > 0, 'Crea tu primer curso', isAdmin() ? 'Ajustes → Nuevo curso, con su hora de entrada' : 'Pídeselo al administrador del colegio', 'ajustes', 'calendar', 'red'],
+      [S.students.length > 0, 'Agrega a tus estudiantes', 'Con su representante y el número de su tarjeta o llavero', 'alumnos', 'users', 'blue'],
+      [S.terminals.some(t => t.kind !== 'CAMARA'), 'Conecta el lector del aula', 'Copia la configuración en el firmware del ESP32', 'terminal', 'nfc', 'graphite'],
+      [S.students.some(x => x.card_ver > 0), 'Graba las tarjetas', 'Estudiante → Tarjeta y acceso → Tarjeta nueva con el lector', 'alumnos', 'shield', 'green']
+    ];
+    const done = steps.filter(x => x[0]).length;
+    if (done === steps.length) return '';
+    return `<div class="section-title">Primeros pasos <small>${done} de ${steps.length}</small></div>
+      <div class="group setup">${steps.map(([ok, t, sub, v, ic, col]) => `<button class="cell has-icon ${ok ? 'done' : ''}" data-act="go" data-v="${v}">${ok ? ico('check', 'green') : ico(ic, col)}<div class="grow"><div class="t">${t}</div><div class="s">${ok ? 'Listo' : sub}</div></div>${ok ? '' : icon('chevron', 'chev')}</button>`).join('')}
+      <button class="cell center" data-act="hideSetup">Ocultar</button></div>`;
+  }
+  handlers.hideSetup = () => { store.set('navi_setup_hide', '1'); renderView(); };
+
   VIEWS.inicio = {
     html() {
       const install = S.installPrompt ? `<div class="group" style="margin-top:14px"><div class="cell has-icon">${ico('download', 'blue')}<div class="grow"><div class="t b">Instala N.A.V.I</div><div class="s">Ábrela como una app desde tu pantalla de inicio.</div></div><button class="btn btn-primary btn-sm" data-act="install">Instalar</button></div></div>` : '';
       return `
         <div class="page-head"><div><div class="eyebrow">${esc(eyebrowDate())}</div><h1>${greeting()}, ${esc(firstName(S.user.name))}</h1></div>
         <div class="actions"><button class="btn btn-sos keep" data-act="sos">${icon('medical')} Emergencia</button><button class="btn btn-primary" data-act="go" data-v="lista">${icon('list')} Pasar lista</button></div></div>
+        <div id="setupBox">${setupHtml()}</div>
         <div class="hero" id="hero">${heroHtml()}</div>
         ${install}
         <div class="section-title">Cursos <small>Hoy</small></div>
@@ -1585,6 +1619,7 @@
       const set = (id, html) => { const el = $('#' + id); if (el) el.innerHTML = html; };
       set('hero', heroHtml());
       set('courseCards', coursesHtml());
+      set('setupBox', setupHtml());
       set('riskBox', riskHtml());
       set('feedSeg', filterSeg());
       set('feed', feedRows());
@@ -1624,7 +1659,7 @@
           <div class="cell"><div class="grow t">Origen</div><div class="v">${SOURCE[r.source] || r.source}</div></div>
           ${r.card_verified != null ? `<div class="cell"><div class="grow t">Tarjeta</div><div class="v">${r.card_verified ? '<span class="pill p-ok">Firma verificada</span>' : '<span class="pill p-abs">Sin firma válida</span>'}</div></div>` : ''}
           ${r.justified ? `<div class="cell"><div class="grow"><div class="t">Justificada</div><div class="s" style="white-space:normal">${esc(r.justification || 'Sin detalle')}</div></div><span class="pill p-info">LOEI art. 170</span></div>` : ''}
-          ${r.terminal_id ? `<div class="cell"><div class="grow t">Terminal</div><div class="v">${esc(r.terminal_id)}</div></div>` : ''}
+          ${r.terminal_id ? `<div class="cell"><div class="grow t">Lector</div><div class="v">${esc(r.terminal_id)}</div></div>` : ''}
         </div>
         <div class="group-title">Fotos</div>${photosHtml(r)}${reasons}`,
       foot: r.review_state === 'PENDIENTE' ? `<button class="btn btn-gray" style="flex:1" data-sheet-decide="OK">${icon('check')} Todo bien</button><button class="btn btn-danger" style="flex:1" data-sheet-decide="FRAUDE">${icon('x')} Suplantación</button>` : r.status !== 'A_TIEMPO' ? `<button class="btn btn-gray" style="flex:1" id="justBtn">${icon('heart')} ${r.justified ? 'Justificada · editar' : 'Justificar'}</button>` : '',
@@ -1688,6 +1723,7 @@
       S.rollStart = Date.now();
       const c = S.courses.find(x => x.id === S.rollCourse);
       const data = c ? rollData(c.id) : [];
+      if (!S.courses.length) return `<div class="page-head"><div><h1>Pase de lista</h1></div></div><div class="group">${emptyHtml('sleepy', 'Aún no hay cursos', isAdmin() ? 'Crea el primero en Ajustes → Nuevo curso.' : 'Pídele al administrador que cree tu curso.')}</div>`;
       return `
         <div class="page-head"><div><div class="eyebrow">${c ? esc(c.name) : ''}</div><h1>Pase de lista</h1><p>Mira el salón y toca solo a quien <b>no</b> está. Los demás ya vienen marcados por su tarjeta.</p></div>
         <div class="actions"><span class="timer" id="rollTimer">${icon('clock')} 0:00</span><button class="btn btn-gray btn-sm keep" data-act="allIn">Todos en el aula</button></div></div>
@@ -1910,7 +1946,7 @@
         $('#readCard', el).addEventListener('click', e => {
           e.preventDefault();
           const box = $('#listenBox', el);
-          box.innerHTML = `<div class="listen"><span class="pulse"></span>Acerca la tarjeta al lector (o usa "Tarjeta nueva" en el simulador)…</div>`;
+          box.innerHTML = `<div class="listen"><span class="pulse"></span>Acerca la tarjeta al lector${S.demo ? ' (o usa "Tarjeta nueva" en el simulador)' : ''}…</div>`;
           clearTimeout(listenTimer);
           S.listenUid = uid => {
             form.nfc_uid.value = uid;
@@ -2303,26 +2339,30 @@
       const port = location.port || (location.protocol === 'https:' ? '443' : '80');
       const course = S.courses.find(c => c.id === S.rollCourse) || S.courses[0];
       const list = S.students.filter(s => !course || s.course_id === course.id).slice(0, 18);
+      const sim = S.demo;
       return `
-        <div class="page-head"><div><div class="eyebrow">Simulador y hardware</div><h1>Terminal</h1></div></div>
+        <div class="page-head"><div><div class="eyebrow">${sim ? 'Simulador y hardware' : 'Hardware del aula'}</div><h1>Lector</h1></div></div>
         <div class="grid term">
           <div>
             <div class="device">
               <div class="screen"><div class="face" id="devFace"></div><div><div class="l1" id="scrL1">ACERQUE SU TARJETA</div><div class="l2" id="scrL2"></div></div></div>
               <div class="leds"><span class="led g"></span><span class="led y"></span><span class="led r"></span></div>
-              <div class="lbl">Tarjetas de ${esc(course ? course.code : '')}</div>
+${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code : '')}</div>
               <div class="taps">${list.map(s => `<button class="tap" data-act="simTap" data-uid="${esc(s.nfc_uid)}">${esc(s.first_name)} ${esc((s.last_name || '')[0] || '')}.</button>`).join('')}</div>
               <div class="lbl">Casos especiales</div>
               <div class="taps"><button class="tap" data-act="simNew">Tarjeta nueva</button><button class="tap warn" data-act="simBurst">Dos tarjetas seguidas</button><button class="tap" data-act="simSigned">Tarjeta firmada</button><button class="tap warn" data-act="simClone">Tarjeta copiada</button></div>
               <div class="lbl">UID manual</div>
               <div class="inline"><input id="manualUid" placeholder="04A1B2C3" maxlength="20" autocomplete="off"><button class="tap" data-act="simManual">Marcar</button></div>
+` : `<div class="lbl">En vivo</div><p class="device-note">Esta pantalla repite lo que muestra el lector del aula cada vez que un estudiante acerca su tarjeta o llavero.</p>`}
             </div>
+            ${sim ? `
             <div class="group-title">Cámara simulada</div>
             <div class="group">
               <div class="cell has-icon">${ico('camera', 'blue')}<div class="grow"><div class="t">Cámara web como ESP32-CAM</div><div class="s">Guarda una foto en cada toque simulado</div></div><label class="switch"><input type="checkbox" data-change="camToggle" ${S.camOn ? 'checked' : ''}><span></span></label></div>
               <div class="cell has-icon">${ico('eyeoff', 'graphite')}<div class="grow"><div class="t">Simular cámara tapada</div><div class="s">El registro queda para revisión</div></div><label class="switch"><input type="checkbox" data-change="camCover" ${S.camCovered ? 'checked' : ''}><span></span></label></div>
               <div style="padding:4px 16px 16px"><div class="cam" id="simCam">${S.camOn ? '<video playsinline muted autoplay></video>' : 'Cámara apagada'}</div></div>
             </div>
+            ` : ''}
           </div>
           <div>
             <div class="group-title" style="margin-top:0">Hardware conectado <button class="btn btn-plain btn-sm" data-act="reloadTerminals" aria-label="Actualizar">${icon('refresh')}</button></div>
@@ -2332,12 +2372,18 @@
               <div class="code" id="fwCfg">#define SERVER_HOST "${esc(host)}"\n#define SERVER_PORT ${esc(port)}\n#define TERMINAL_KEY "${isAdmin() ? '…' : 'pídela al administrador'}"\n#define TERMINAL_ID "ESP32-AULA-1"</div>
             </div>${isAdmin() ? `<button class="cell center" data-act="copyCfg">Copiar configuración</button>` : ''}</div>
             <p class="group-foot">Pégalo en <span class="mono">config.h</span> de ambos firmwares. El ESP32 y esta PC deben estar en la misma red WiFi.${host === 'IP_DE_TU_PC' ? ' Abriste la app con localhost: la IP de tu PC aparece en la ventana del servidor ("En tu red WiFi").' : ''}</p>
+            ${sim ? `
             <div class="group-title">Preparar una demostración</div>
             <div class="group">
               <button class="cell has-icon" data-act="demoNow">${ico('bolt', 'orange')}<div class="grow"><div class="t">Entrada = ahora</div><div class="s">Todos los cursos entran en este minuto</div></div>${icon('chevron', 'chev')}</button>
               <button class="cell has-icon" data-act="resetDay">${ico('refresh', 'blue')}<div class="grow"><div class="t">Reiniciar el día</div><div class="s">Borra los registros de hoy</div></div>${icon('chevron', 'chev')}</button>
               <button class="cell has-icon" data-act="runAbs">${ico('door', 'red')}<div class="grow"><div class="t">Marcar ausencias ya</div><div class="s">Si ya pasó el límite de algún curso</div></div>${icon('chevron', 'chev')}</button>
             </div>
+            ` : isAdmin() ? `<div class="group-title">Herramientas del día</div>
+            <div class="group">
+              <button class="cell has-icon" data-act="runAbs">${ico('door', 'red')}<div class="grow"><div class="t">Marcar ausencias ya</div><div class="s">Para los cursos que ya pasaron su hora límite</div></div>${icon('chevron', 'chev')}</button>
+            </div>
+            <p class="group-foot">El servidor también las marca solo, cada minuto.</p>` : ''}
           </div>
         </div>`;
     },
@@ -2456,6 +2502,7 @@
         <div class="page-head"><div><h1>Ajustes</h1></div></div>
         <div class="grid two">
           <div>
+            ${S.demo ? `<div class="group demo-card"><div class="cell has-icon">${ico('bolt', 'orange')}<div class="grow"><div class="t b">Modo demostración</div><div class="s" style="white-space:normal">Los estudiantes, cursos y registros son de ejemplo. Nada de esto se mezcla con los datos reales del colegio.</div></div></div>${window.NaviAndroid ? `<button class="cell center" data-act="exitDemo">Salir de la demostración</button>` : ''}</div>` : ''}
             <div class="group"><div class="profile-card"><div class="me-bot" id="meBig">${NaviBots.svg(u.avatar || 'triangle', 'happy')}</div><div style="min-width:0"><b>${esc(u.name)}</b><small>${esc(u.email)} · ${roleName(u.role)}</small></div></div></div>
             <div class="group-title">Tu bot</div>
             <div class="group"><div class="avatar-grid" id="avGrid">${NaviBots.KEYS.map(k => `<button type="button" class="${u.avatar === k ? 'on' : ''}" data-act="pickAvatar" data-k="${k}" title="${NaviBots.CHARACTERS[k].name}">${NaviBots.svg(k, u.avatar === k ? 'happy' : 'neutral')}</button>`).join('')}</div></div>
@@ -2480,7 +2527,7 @@
             ${can ? '' : '<p class="group-foot">Solo el administrador puede cambiar esto.</p>'}
             <div class="group-title">Canales</div>
             <div class="group">
-              <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('mail', 'blue')}<div class="grow"><div class="t">Correo</div><div class="s">${ch.email ? esc(ch.email_from) : 'Sin configurar · se simula'}</div></div>${ch.email ? '' : '<span class="pill p-late">Configurar</span>'}${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
+              <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('mail', 'blue')}<div class="grow"><div class="t">Correo</div><div class="s">${ch.email ? esc(ch.email_from) : (S.demo ? 'Sin configurar · se simula' : 'Sin configurar')}</div></div>${ch.email ? '' : '<span class="pill p-late">Configurar</span>'}${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('door', 'graphite')}<div class="grow"><div class="t">Copia a la institución</div><div class="s">${ch.inst_email ? esc(ch.inst_email) : 'DECE o inspección'}</div></div><span class="v">${ch.inst_email ? { URGENT: 'Urgentes', ALL: 'Todos', NONE: 'Nunca' }[ch.inst_cc] || '' : 'No'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgWa"' : ''}>${ico('chat', 'green')}<div class="grow"><div class="t">WhatsApp</div><div class="s">${ch.wa_urgent === false ? 'Solo si no llegó otro aviso' : 'También en ausencias y emergencias'}</div></div><span class="v">${ch.whatsapp === 'API' ? 'Automático' : 'Un toque'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <div class="cell has-icon">${ico('send', 'teal')}<div class="grow t">Telegram</div><span class="v">${ch.telegram ? '@' + esc(ch.telegramBot) : 'No configurado'}</span></div>
@@ -2510,7 +2557,7 @@
             </div>
             <div class="group-title">App</div>
             <div class="group">
-              ${window.NaviAndroid ? `<button class="cell has-icon" data-act="nativeServer">${ico('cpu', 'graphite')}<div class="grow"><div class="t">Servidor del colegio</div><div class="s">${esc((window.NaviAndroid.getServer() || 'Versión de prueba sin servidor').replace(/^https?:\/\//, ''))}</div></div><span class="v">Cambiar</span>${icon('chevron', 'chev')}</button>` : ''}
+              ${window.NaviAndroid && window.NaviAndroid.getServer() ? `<button class="cell has-icon" data-act="nativeServer">${ico('cpu', 'graphite')}<div class="grow"><div class="t">Servidor del colegio</div><div class="s">${esc(window.NaviAndroid.getServer().replace(/^https?:\/\//, ''))}</div></div><span class="v">Cambiar</span>${icon('chevron', 'chev')}</button>` : ''}
               <div class="cell has-icon">${ico('phone', 'indigo')}<div class="grow"><div class="t">App en este dispositivo</div><div class="s" style="white-space:normal">${installSub}</div></div>${S.installPrompt ? `<button class="btn btn-primary btn-sm" data-act="install">Instalar</button>` : standalone ? '<span class="pill p-ok">Instalada</span>' : ''}</div>
             </div>
             <div class="group" style="margin-top:26px"><button class="cell center danger" data-act="logout">Cerrar sesión</button></div>
@@ -2601,6 +2648,7 @@
       toast({ title: 'Rol actualizado', mood: 'happy' });
     } catch (e) { toast({ title: 'No se pudo', text: e.message, mood: 'sad' }); loadUsers(); }
   };
+  handlers.exitDemo = el => confirmTap(el, 'Toca otra vez para salir', () => window.NaviAndroid.resetServer());
   handlers.nativeServer = el => confirmTap(el.querySelector('.t'), 'Toca otra vez para cambiar', () => window.NaviAndroid.resetServer());
   handlers.mascotsToggle = el => { store.set('navi_mascots', el.checked ? '1' : '0'); };
   handlers.mascotGallery = () => openMascotGallery();

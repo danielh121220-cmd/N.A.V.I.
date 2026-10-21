@@ -117,3 +117,14 @@
 | En Ajustes, "Cursos y horarios" quedaba encima del nombre del curso. | Se corrigió el margen negativo. |
 | En pantallas de 360 px los días de la semana tapaban la palabra "Días" y varios textos se cortaban con "…". | Botones de días más pequeños en pantallas angostas y los subtítulos pasan a dos líneas, como en Ajustes de iPhone. |
 | Las medidas de los módulos en la carcasa eran aproximadas. | Se usaron las medidas de las hojas de datos (PN532 43 × 41 mm, ESP32 52 × 28,3 mm, ESP32-CAM 27 × 40,5 mm…) y se comprobó en Fusion que no chocan: 0 interferencias. |
+
+## Ronda 8 (sistema real y demostración separados)
+
+| Problema | Corrección |
+| --- | --- |
+| La app real mostraba botones de prueba ("Probar con la cuenta demo", estudiantes de ejemplo, simulador del lector), que no deberían verse en un colegio. | El servidor arranca en modo real por defecto. La demostración se abre con `INICIAR_NAVI_DEMO.bat` o, en el celular, con el código 12122008 en el campo del servidor. |
+| Los datos de prueba podían quedar mezclados con los reales. | La demostración usa su propia base de datos (`backend/data-demo`). Una sesión de la demostración no sirve en el sistema real: las firmas son distintas. |
+| Un colegio nuevo empezaba con 9 estudiantes inventados. | El sistema real empieza vacío. La primera pantalla pide crear la cuenta del administrador y el Inicio muestra **Primeros pasos**: curso, estudiantes, lector y tarjetas. |
+| Sin cursos, el pase de lista mostraba un cronómetro y "Este curso no tiene estudiantes". | Muestra "Aún no hay cursos" y dónde crearlos. |
+| La pestaña Terminal era un simulador. | En el sistema real se llama **Lector**: muestra en vivo lo que ve el estudiante en el lector, el hardware conectado y la configuración del firmware. El simulador queda solo en la demostración. |
+| La demostración dentro del APK se abría en formato de computadora, con letra diminuta, y las tildes podían verse como "RevisiÃ³n". | El archivo de la demostración ahora es una página completa, con la codificación UTF-8 y el tamaño de pantalla del celular declarados al inicio. |

@@ -6,11 +6,16 @@
 2. Ábrelo. Android pedirá permiso para **instalar apps desconocidas** desde esa app (Archivos, Chrome o WhatsApp): permítelo solo para esta instalación.
 3. Si aparece Play Protect, toca **Instalar de todos modos**: la app no está en la Play Store, por eso avisa.
 4. Abre **N.A.V.I** y escribe la dirección del servidor que muestra `INICIAR_NAVI.bat` (por ejemplo `192.168.1.50:3000`). El celular y la PC deben estar en el mismo WiFi.
-5. Sin servidor, toca **Probar sin servidor**: abre la versión de prueba completa dentro del celular.
+5. Para la demostración sin servidor, escribe **12122008** en el campo del servidor y toca **Conectar**. Se abre la versión de demostración completa dentro del celular, con datos de ejemplo, y queda abierta aunque cierres la app. Para volver: **Ajustes → Salir de la demostración**.
 
 Requisitos: Android 7 o superior. Para leer y grabar tarjetas, el celular debe tener NFC activado.
 
-Versión actual: **3.4**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+Versión actual: **3.5**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+
+En la versión 3.5:
+
+- La app ya no muestra botones de prueba: la demostración se abre solo con el código 12122008.
+- La demostración dentro del celular ahora se ve en formato de celular y con tildes correctas.
 
 En la versión 3.4:
 

@@ -48,7 +48,6 @@ button { font: inherit; border: 0; cursor: pointer; }
   <div class="recent" id="recent"></div>
   <div class="err" id="err"></div>
   <button class="primary" id="go" type="button">Conectar</button>
-  <button class="secondary" id="demo" type="button">Probar sin servidor</button>
   <p class="ver" id="ver"></p>
 </main>
 <script>
@@ -89,7 +88,17 @@ button { font: inherit; border: 0; cursor: pointer; }
     list = [u].concat(list.filter(function (x) { return x !== u; })).slice(0, 4);
     try { localStorage.setItem('navi_servers', JSON.stringify(list)); } catch (e) {}
   }
+  function demo() {
+    input.value = '';
+    input.blur();
+    err.textContent = '';
+    go.disabled = true;
+    go.textContent = 'Abriendo la demostración…';
+    if (A && A.haptic) { try { A.haptic(18); } catch (e) {} }
+    setTimeout(function () { if (A) A.openDemo(); else location.href = 'demo.html'; }, 350);
+  }
   function connect(force) {
+    if (input.value.replace(/\s/g, '') === '12122008') { demo(); return; }
     var u = norm(input.value);
     if (!u) { err.textContent = 'Escribe la dirección del servidor.'; input.focus(); return; }
     err.textContent = '';
@@ -114,7 +123,6 @@ button { font: inherit; border: 0; cursor: pointer; }
   go.onclick = function () { connect(false); };
   input.addEventListener('input', function () { go.textContent = 'Conectar'; go.onclick = function () { connect(false); }; err.textContent = ''; });
   document.getElementById('form').addEventListener('submit', function (e) { e.preventDefault(); connect(false); });
-  document.getElementById('demo').onclick = function () { if (A) A.openDemo(); };
   paintRecent();
 })();
 </script>

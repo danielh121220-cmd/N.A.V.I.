@@ -32,17 +32,17 @@
 
 ## 3. Demostración en vivo (7 pasos, unos 4 minutos)
 
-Antes de empezar: abre la app en la laptop, entra con la cuenta del docente, ve a **Terminal → Entrada = ahora** y ten a mano dos tarjetas grabadas.
+Antes de empezar: abre **`INICIAR_NAVI_DEMO.bat`** en la laptop (los datos de la demostración van aparte de los reales), entra con **Entrar a la cuenta de demostración**, ve a **Lector → Entrada = ahora** y ten a mano dos tarjetas grabadas. En el celular, escribe **12122008** en el campo del servidor de la app para abrir la demostración sin servidor.
 
 1. **Puntual.** Pasa una tarjeta por el lector: LED verde, "HOLA MATEO · A TIEMPO" y la app se actualiza al instante.
 2. **Atraso y aviso.** Baja la tolerancia a 0 min en Ajustes y pasa otra tarjeta: LED amarillo. Muestra el aviso en **Inicio → Avisos** y el correo con copia al DECE.
-3. **Tarjeta copiada.** En **Terminal → Casos especiales → Tarjeta copiada**: el registro aparece en **Revisión** con el motivo "puede ser una copia de la tarjeta". Explica la firma HMAC.
+3. **Tarjeta copiada.** En **Lector → Casos especiales → Tarjeta copiada**: el registro aparece en **Revisión** con el motivo "puede ser una copia de la tarjeta". Explica la firma HMAC.
 4. **Dos tarjetas seguidas.** Pasa dos tarjetas en menos de 1,5 s: queda en revisión con las fotos de la cámara.
 5. **Pase de lista por excepción.** Abre **Pase de lista**, toca a quien no está y confirma.
 6. **La mascota, sin celular con NFC.** Pasa por primera vez una tarjeta nueva: el lector muestra la mascota y "NACIO LUMI! · CODIGO APP". En cualquier celular (mejor un iPhone, para que se note): **Estudiante → Usar el lector del aula**, escribe el código, crea el PIN y la mascota sale del huevo. Vuelve a pasar la tarjeta: ya no sale código, porque la cuenta quedó guardada. Muestra los corazones y, en la cuenta del docente, **Inicio → Alerta temprana**. Antes de la demo, graba una tarjeta con **Grabar con el lector del aula** delante del jurado: 2 segundos.
 7. **Ficha médica (el cierre).** Acerca cualquier celular a la tarjeta de Mateo: se abre su ficha con la alergia grave a la penicilina. En la laptop aparece "Ficha médica abierta". Frase final: *"La misma tarjeta que marca asistencia puede salvar una vida."*
 
-**Plan B:** si falla el WiFi del evento, la demo sigue con el simulador de la app (Terminal) y con la versión de prueba de la app, que no necesita servidor. Lleva también un video de la demo grabado en casa.
+**Plan B:** si falla el WiFi del evento, la demo sigue con el simulador de la app (**Lector**) y con la demostración del celular (código 12122008), que no necesita servidor. Si el jurado pregunta por el sistema real, abre `INICIAR_NAVI.bat`: está limpio, sin botones de prueba, y guía la configuración con **Primeros pasos**. Lleva también un video de la demo grabado en casa.
 
 ## 4. Guion de 3 minutos
 

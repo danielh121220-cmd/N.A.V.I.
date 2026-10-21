@@ -864,3 +864,15 @@ button.tile-k:active { transform: scale(0.96); }
   .frow > span:not(.ico):not(.unit) { width: 100px; }
   .frow input.mono { font-size: 15px; }
 }
+.demo-tag { display: inline-flex; align-items: center; gap: 5px; margin: 10px auto 0; height: 26px; padding: 0 11px; border-radius: 13px; background: var(--orange-t, rgba(255, 149, 0, 0.14)); color: var(--orange, #FF9500); font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.demo-tag svg { width: 14px; height: 14px; }
+.demo-tag.hidden { display: none; }
+.device-note { color: rgba(255, 255, 255, 0.62); font-size: 14px; line-height: 1.4; margin-top: 4px; letter-spacing: -0.01em; }
+.demo-card { margin-bottom: 18px; }
+.setup .cell.done .t { color: var(--text-2); }
+.setup .cell.done .s { color: var(--green); }
+@media (max-width: 900px) and (pointer: coarse) {
+  .cell .s { -webkit-line-clamp: 3; }
+}
+#setupBox .section-title:first-child { margin-top: 4px; }
+#setupBox:not(:empty) { margin-bottom: 18px; }

@@ -5,9 +5,12 @@ Pase de lista con tarjetas NFC, avisos automáticos a los representantes y verif
 ## Probarlo ya (Windows)
 
 1. Instala **Node.js LTS** si no lo tienes: https://nodejs.org/es
-2. Doble clic en **`INICIAR_NAVI.bat`**. La primera vez instala lo necesario y abre el navegador en `http://localhost:3000`.
-3. Crea tu cuenta (la primera cuenta es la administradora) o toca **Probar con la cuenta demo**.
-4. Ve a **Terminal** y toca las tarjetas del simulador para ver todo funcionando sin hardware.
+2. Elige cómo abrirlo:
+   - **`INICIAR_NAVI.bat`**: el sistema real del colegio. Empieza vacío: la primera cuenta que crees es la del administrador, y la app te guía con **Primeros pasos** (curso, estudiantes, lector y tarjetas).
+   - **`INICIAR_NAVI_DEMO.bat`**: la demostración, con estudiantes de ejemplo, la cuenta demo y el simulador del lector. Usa su propia base de datos (`backend/data-demo`), así que nunca se mezcla con la real.
+3. La primera vez instala lo necesario y abre el navegador en `http://localhost:3000`.
+
+En la app de Android, escribe **12122008** en el campo del servidor y toca **Conectar**: se abre la demostración completa dentro del celular, sin servidor.
 
 Para instalarla como app en la PC o en el celular, lee [`docs/INSTALAR_APP.md`](docs/INSTALAR_APP.md).
 
@@ -65,5 +68,5 @@ proyecto con pn532/
 ## Notas
 
 - La base de datos nueva está en `backend/data/navi.sqlite`. La antigua (`backend/navi_database.sqlite`) quedó intacta como respaldo, pero ya no se usa.
-- La clave de terminal se genera sola y aparece en la ventana del servidor y en **Terminal → Configuración del firmware** (solo para el administrador).
-- Para un colegio real: pon `NAVI_DEMO=0` en `backend/.env`.
+- La clave de terminal se genera sola y aparece en la ventana del servidor y en **Lector → Configuración del firmware** (solo para el administrador). Es la misma en el modo real y en la demostración, así que el lector funciona con los dos.
+- El modo demostración también se activa con `NAVI_DEMO=1` en `backend/.env`.

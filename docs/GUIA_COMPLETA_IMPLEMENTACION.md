@@ -15,6 +15,6 @@ Esta guía se dividió en documentos más cortos:
 1. `INICIAR_NAVI.bat` → crea tu cuenta de administrador.
 2. **Ajustes → Cursos y horarios:** crea tus cursos y horas de entrada.
 3. **Estudiantes → Nuevo:** registra a cada estudiante; con el lector conectado, "Leer" llena el UID.
-4. Configura `config.h` de ambos firmwares con los datos de **Terminal → Configuración del firmware** y súbelos.
-5. Comprueba en **Terminal → Hardware conectado** que ambos están "En línea".
+4. Configura `config.h` de ambos firmwares con los datos de **Lector → Configuración del firmware** y súbelos.
+5. Comprueba en **Lector → Hardware conectado** que ambos están "En línea".
 6. Opcional: configura correo o Telegram en `backend/.env`.

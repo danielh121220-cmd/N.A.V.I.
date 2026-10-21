@@ -182,6 +182,14 @@ app.patch('/api/users/:id', auth.requireAdmin, wrap((req, res) => {
   res.json({ ok: true });
 }));
 
+app.get('/api/info', (req, res) => {
+  res.json({
+    demo_mode: config.demoMode,
+    institution: config.institutionName,
+    setup: db.q("SELECT COUNT(*) AS c FROM users WHERE email != 'demo@navi.local'").get().c === 0
+  });
+});
+
 app.get('/api/status', auth.requireUser, (req, res) => {
   const date = req.query.date || T.localDate();
   res.json({
@@ -815,13 +823,12 @@ if (require.main === module) {
     const ips = lanAddresses();
     const ch = notifier.status();
     console.log('');
-    console.log('  N.A.V.I listo');
+    console.log(config.demoMode ? '  N.A.V.I listo · MODO DEMOSTRACIÓN (datos de ejemplo, separados de los reales)' : '  N.A.V.I listo');
     console.log(`  En esta PC:      http://localhost:${config.port}`);
     for (const ip of ips) console.log(`  En tu red WiFi:  http://${ip}:${config.port}`);
     console.log('');
     console.log(`  Clave de terminal para el firmware: ${config.terminalKey}`);
-    console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : 'no configurado (se simula)'} · Telegram: ${config.telegram.token ? 'configurando...' : 'no configurado'}`);
-    console.log(`  Modo demo: ${config.demoMode ? 'activado' : 'desactivado'}`);
+    console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : (config.demoMode ? 'no configurado (se simula)' : 'no configurado')} · Telegram: ${config.telegram.token ? 'configurando...' : 'no configurado'}`);
     console.log('');
   });
 }

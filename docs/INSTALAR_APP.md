@@ -6,6 +6,7 @@ La app es una PWA: se instala desde el navegador y queda con su propio ícono, a
 
 `docs/NAVI_prueba_navegador.html` es la app completa en un solo archivo: el servidor corre dentro del navegador, con los mismos datos de ejemplo, el simulador de tarjetas, la ficha médica y los avisos. Sirve para mostrarla o probarla cuando no tienes la PC a mano.
 
+- En la app de Android es la misma demostración: escribe **12122008** en el campo del servidor.
 - Lo que hagas se guarda solo en ese navegador. **Ajustes → Empezar de cero** lo borra.
 - Los enlaces de WhatsApp sí abren WhatsApp. Los correos reales, las descargas y el lector NFC físico solo funcionan con `INICIAR_NAVI.bat`.
 - Si cambias el código, se regenera con `npm install` y `npm run build` dentro de `tools/demo`.

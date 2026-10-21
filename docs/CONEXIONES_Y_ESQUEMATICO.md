@@ -122,11 +122,11 @@ Si cargas el ejemplo *I2C Scanner* deberías ver:
 ## 8. Configurar y subir el firmware
 
 1. Arranca el servidor con `INICIAR_NAVI.bat` y entra como administrador.
-2. En la app ve a **Terminal → Configuración del firmware** y copia los datos.
+2. En la app ve a **Lector → Configuración del firmware** y copia los datos.
 3. En **ambas** carpetas del firmware abre `config.h` y llena `WIFI_SSID`, `WIFI_PASS`, `SERVER_HOST` (la IP de tu PC), `SERVER_PORT` y `TERMINAL_KEY`. Usa el mismo `TERMINAL_ID` en el lector y en la cámara: así el servidor sabe que van juntos.
 4. En Arduino IDE instala las librerías **Adafruit PN532**, **Adafruit SSD1306**, **Adafruit GFX** y **ArduinoJson** (y **Adafruit VL53L0X** si usas el sensor).
 5. Sube `navi_esp32_pn532.ino` al ESP32 (placa *ESP32 Dev Module*) y `navi_esp32_cam.ino` al ESP32-CAM (placa *AI Thinker ESP32-CAM*).
-6. En **Terminal → Hardware conectado** deben aparecer el lector y la cámara como "En línea".
+6. En **Lector → Hardware conectado** deben aparecer el lector y la cámara como "En línea".
 
 ## 9. Qué significa cada señal del lector
 

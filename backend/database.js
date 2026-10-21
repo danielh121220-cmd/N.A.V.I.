@@ -217,6 +217,7 @@ function setSetting(key, value) {
 }
 
 function seed() {
+  if (!config.demoMode) return;
   const count = db.prepare('SELECT COUNT(*) AS c FROM courses').get().c;
   if (count > 0) return;
   const insCourse = db.prepare(`INSERT INTO courses (name, code, teacher, classroom, schedule_start, late_tolerance_min, absent_limit_min, theme) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -247,6 +248,7 @@ function seed() {
 seed();
 
 function seedHealth() {
+  if (!config.demoMode) return;
   const n = db.prepare('SELECT COUNT(*) AS c FROM student_health').get().c;
   if (n > 0) return;
   const crypto = require('crypto');

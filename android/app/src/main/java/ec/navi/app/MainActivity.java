@@ -36,7 +36,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private static final String START = "file:///android_asset/start.html";
     private static final String DEMO = "file:///android_asset/demo.html";
     private static final int FILE_REQUEST = 42;
-    private static final String VERSION = "3.4";
+    private static final String VERSION = "3.5";
 
     private WebView web;
     private NfcAdapter nfc;
@@ -81,6 +81,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
 
         String server = prefs.getString("server", "");
         if (state != null) web.restoreState(state);
+        else if (prefs.getBoolean("demo", false)) web.loadUrl(DEMO);
         else web.loadUrl(server.length() > 0 ? server + "/" : START);
     }
 
@@ -444,18 +445,19 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             if (u.length() == 0) return;
             if (!u.startsWith("http://") && !u.startsWith("https://")) u = "http://" + u;
             while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
-            prefs.edit().putString("server", u).apply();
+            prefs.edit().putString("server", u).remove("demo").apply();
             go(u + "/");
         }
 
         @JavascriptInterface
         public void resetServer() {
-            prefs.edit().remove("server").apply();
+            prefs.edit().remove("server").remove("demo").apply();
             go(START);
         }
 
         @JavascriptInterface
         public void openDemo() {
+            prefs.edit().putBoolean("demo", true).apply();
             go(DEMO);
         }
 

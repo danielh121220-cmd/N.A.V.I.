@@ -3,8 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const BASE_DIR = path.join(ROOT, 'data');
 
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;
@@ -25,7 +24,13 @@ function loadEnvFile(file) {
 
 loadEnvFile(path.join(ROOT, '.env'));
 
-const secretsFile = path.join(DATA_DIR, 'secrets.json');
+const bool = (v, def) => (v === undefined || v === '' ? def : /^(1|true|si|sí|yes|on)$/i.test(v));
+const demoMode = bool(process.env.NAVI_DEMO, false);
+const DATA_DIR = demoMode ? path.join(ROOT, 'data-demo') : BASE_DIR;
+fs.mkdirSync(BASE_DIR, { recursive: true });
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const secretsFile = path.join(BASE_DIR, 'secrets.json');
 let secrets = {};
 try {
   secrets = JSON.parse(fs.readFileSync(secretsFile, 'utf8'));
@@ -43,16 +48,16 @@ if (!secrets.terminalKey) {
 }
 if (changed) fs.writeFileSync(secretsFile, JSON.stringify(secrets, null, 2));
 
-const bool = (v, def) => (v === undefined || v === '' ? def : /^(1|true|si|sí|yes|on)$/i.test(v));
+const baseSecret = process.env.NAVI_TOKEN_SECRET || secrets.tokenSecret;
 
 module.exports = {
   ROOT,
   DATA_DIR,
   port: parseInt(process.env.PORT || '3000', 10),
   dbFile: path.join(DATA_DIR, 'navi.sqlite'),
-  tokenSecret: process.env.NAVI_TOKEN_SECRET || secrets.tokenSecret,
+  tokenSecret: demoMode ? crypto.createHmac('sha256', baseSecret).update('navi-demo').digest('hex') : baseSecret,
   terminalKey: process.env.NAVI_TERMINAL_KEY || secrets.terminalKey,
-  demoMode: bool(process.env.NAVI_DEMO, true),
+  demoMode,
   photoRetentionDays: parseInt(process.env.NAVI_PHOTO_DAYS || '7', 10),
   cameraObstructedBytes: parseInt(process.env.NAVI_CAM_MIN_BYTES || '7000', 10),
   smtp: {
