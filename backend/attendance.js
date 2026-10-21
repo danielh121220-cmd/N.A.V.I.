@@ -329,6 +329,10 @@ function scan({ uid, terminalId = 'ESP32-AULA-1', ts = null, presenceId = null, 
     if (status === 'A_TIEMPO' && settings.notify_on_arrival) setImmediate(() => notify('ARRIVAL', student.id, attId));
   }
 
+  if (src !== 'OFFLINE' && !simulated) {
+    const term = db.q('SELECT course_id FROM terminals WHERE id = ?').get(terminalId);
+    if (term && term.course_id && term.course_id !== student.course_id) db.q('UPDATE attendances SET other_room = 1 WHERE id = ?').run(attId);
+  }
   const att = db.q('SELECT * FROM attendances WHERE id = ?').get(attId);
   riskChecks(att, student, presenceId, when);
   checkCard(attId, student, cleanUid, cred, ntag);
@@ -509,12 +513,13 @@ function purgeOldPhotos() {
   return rows.length;
 }
 
-function stats(date) {
-  const total = db.q('SELECT COUNT(*) AS c FROM students WHERE active = 1').get().c;
-  const rows = db.q('SELECT status, COUNT(*) AS c FROM attendances WHERE date = ? GROUP BY status').all(date);
+function stats(date, courseIds) {
+  const scope = Array.isArray(courseIds) ? ` AND course_id IN (${courseIds.map(Number).join(',') || '0'})` : '';
+  const total = db.q(`SELECT COUNT(*) AS c FROM students WHERE active = 1${scope}`).get().c;
+  const rows = db.q(`SELECT status, COUNT(*) AS c FROM attendances WHERE date = ?${scope} GROUP BY status`).all(date);
   const by = Object.fromEntries(rows.map(r => [r.status, r.c]));
-  const pending = db.q(`SELECT COUNT(*) AS c FROM attendances WHERE review_state = 'PENDIENTE'`).get().c;
-  const verified = db.q(`SELECT COUNT(*) AS c FROM attendances WHERE date = ? AND in_class IS NOT NULL`).get(date).c;
+  const pending = db.q(`SELECT COUNT(*) AS c FROM attendances WHERE review_state = 'PENDIENTE'${scope}`).get().c;
+  const verified = db.q(`SELECT COUNT(*) AS c FROM attendances WHERE date = ? AND in_class IS NOT NULL${scope}`).get(date).c;
   const present = (by.A_TIEMPO || 0) + (by.TARDE || 0);
   return {
     total,

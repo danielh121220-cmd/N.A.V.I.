@@ -150,3 +150,13 @@
 | --- | --- |
 | Los avisos al número del representante solo podían salir por WhatsApp de un toque (manual) o con la API de Meta (pagada y con aprobación). | Nuevo canal **SMS**: un celular Android con chip y la app N.A.V.I envía los SMS solo, desde su propio plan. Si el celular se desconecta, los SMS esperan y salen al volver. Cada SMS muestra su estado en Avisos. |
 | La cámara no explicaba qué fallaba y solo se podía probar con el lector conectado. | El Monitor serie de la cámara indica PSRAM, WiFi y servidor, y con la letra **f** toma una foto de prueba (camara-3.1). |
+| Para disparar la foto había que llevar un cable del lector a la cámara, y con la placa ESP32-CAM-MB los pines de la cámara quedan tapados. | En cada toque el servidor le pide la foto a la cámara por WiFi (camara-3.2), con la misma clave de terminal. El cable de disparo queda como opción. |
+
+## Ronda 11 (colegio completo)
+
+| Problema | Corrección |
+| --- | --- |
+| En el celular, la lista de Avisos se veía encimada: los textos de una fila se montaban sobre la siguiente. | Las filas usaban por error el estilo de los botones del simulador (altura fija). Ahora cada fila crece con su texto. |
+| Todos los docentes veían todos los cursos y estudiantes del colegio. | El administrador asigna los docentes de cada curso. Cada docente ve solo sus cursos, estudiantes, registros, avisos, alertas y estadísticas, también en vivo. No puede editar estudiantes ni pasar lista de cursos ajenos. |
+| No se sabía a qué aula pertenecía cada lector. | Cada lector se asigna a un aula desde la pestaña Lector, con un nombre visible. Si un estudiante marca en el lector de otra aula, el registro dice "otra aula". |
+| El saludo decía "Buenas tardes, Prof." | Se saltan los títulos (Prof., Lic., Ing., Dr.) y saluda con el nombre. |

@@ -1,7 +1,7 @@
 #pragma once
 
-#define WIFI_SSID "TU_RED_WIFI"
-#define WIFI_PASS "TU_CONTRASENA_WIFI"
+#define WIFI_SSID "Claro_MORGAN"
+#define WIFI_PASS "098087916312122008"
 
 #define TERMINAL_ID "ESP32-AULA-1"
 

@@ -397,10 +397,10 @@ button.tile-k:active { transform: scale(0.96); }
 .led.r.on { background: #FF453A; box-shadow: 0 0 14px #FF453A; }
 .device .lbl { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #8E8E93; font-weight: 600; margin: 16px 2px 8px; }
 .taps { display: flex; flex-wrap: wrap; gap: 6px; }
-.tap { height: 34px; padding: 0 13px; border-radius: 17px; background: rgba(255, 255, 255, 0.1); color: #F2F2F7; font-weight: 500; font-size: 14px; transition: background 0.12s, transform 0.18s var(--spring); }
-@media (hover: hover) { .tap:hover { background: rgba(255, 255, 255, 0.16); } }
-.tap:active { transform: scale(0.92); }
-.tap.warn { background: rgba(255, 69, 58, 0.2); color: #FF8A82; }
+.device .tap { height: 34px; padding: 0 13px; border-radius: 17px; background: rgba(255, 255, 255, 0.1); color: #F2F2F7; font-weight: 500; font-size: 14px; transition: background 0.12s, transform 0.18s var(--spring); }
+@media (hover: hover) { .device .tap:hover { background: rgba(255, 255, 255, 0.16); } }
+.device .tap:active { transform: scale(0.92); }
+.device .tap.warn { background: rgba(255, 69, 58, 0.2); color: #FF8A82; }
 .device input { flex: 1; height: 36px; padding: 0 14px; border-radius: 18px; border: 0; background: rgba(255, 255, 255, 0.1); color: #fff; outline: none; font-family: var(--mono); text-transform: uppercase; min-width: 0; font-size: 16px; }
 .device .inline { display: flex; gap: 6px; }
 .cam { position: relative; aspect-ratio: 4 / 3; background: #000; border-radius: 14px; overflow: hidden; display: grid; place-items: center; color: #8E8E93; font-size: 14px; }

@@ -37,11 +37,60 @@ app.get('/sw.js', (req, res) => {
 });
 app.use(express.static(PUBLIC, { maxAge: 0, etag: true }));
 
+function scopeOf(user) {
+  if (!user || user.role === 'ADMINISTRADOR' || config.demoMode) return null;
+  return db.q('SELECT course_id FROM course_teachers WHERE user_id = ?').all(user.id).map(r => r.course_id);
+}
+const allowed = (scope, courseId) => !scope || scope.includes(Number(courseId));
+const deny = res => res.status(403).json({ error: 'Este curso no está asignado a tu cuenta. Pídeselo al administrador.' });
+function ownStudent(req, res, next) {
+  const st = db.q('SELECT course_id FROM students WHERE id = ?').get(Number(req.params.id));
+  if (st && !allowed(scopeOf(req.user), st.course_id)) return deny(res);
+  next();
+}
+function ownCourse(req, res, next) {
+  if (!allowed(scopeOf(req.user), req.params.courseId || req.params.id)) return deny(res);
+  next();
+}
+function ownAttendance(req, res, next) {
+  const a = db.q('SELECT course_id FROM attendances WHERE id = ?').get(Number(req.params.id));
+  if (a && !allowed(scopeOf(req.user), a.course_id)) return deny(res);
+  next();
+}
+function wsScope(ws) {
+  if (!ws.userId) return null;
+  if (!ws.scopeAt || Date.now() - ws.scopeAt > 30000) {
+    ws.scope = scopeOf(db.q('SELECT id, role FROM users WHERE id = ?').get(ws.userId));
+    ws.scopeAt = Date.now();
+  }
+  return ws.scope;
+}
+function payloadCourse(type, p) {
+  if (!p) return null;
+  if (type === 'attendance' || type === 'student') return p.course_id != null ? p.course_id : p.id != null && type === 'student' ? (db.q('SELECT course_id FROM students WHERE id = ?').get(p.id) || {}).course_id : null;
+  if (type === 'notification' || type === 'mascot_died' || type === 'mascot_revived' || type === 'mascot_adopted' || type === 'mascot_unlocked') {
+    const sid = p.student_id;
+    return sid ? (db.q('SELECT course_id FROM students WHERE id = ?').get(sid) || {}).course_id : null;
+  }
+  return null;
+}
+
 function broadcast(type, payload) {
   const msg = JSON.stringify({ type, payload, at: new Date().toISOString() });
+  let course;
+  let resolved = false;
   for (const client of wss.clients) {
-    if (client.readyState === 1) client.send(msg);
+    if (client.readyState !== 1) continue;
+    const scope = wsScope(client);
+    if (scope) {
+      if (!resolved) { course = payloadCourse(type, payload); resolved = true; }
+      if (course != null && !scope.includes(Number(course))) continue;
+    }
+    client.send(msg);
   }
+}
+function resetScopes() {
+  for (const client of wss.clients) client.scopeAt = 0;
 }
 A.setBroadcast(broadcast);
 P.setHooks({
@@ -195,7 +244,7 @@ app.get('/api/status', auth.requireUser, (req, res) => {
   res.json({
     date,
     server_time: new Date().toISOString(),
-    stats: A.stats(date),
+    stats: A.stats(date, scopeOf(req.user)),
     channels: notifier.status(),
     demo_mode: config.demoMode,
     public_url: config.publicUrl || null,
@@ -247,7 +296,9 @@ app.get('/api/terminal/key', auth.requireAdmin, (req, res) => res.json({ key: co
 
 app.get('/api/courses', auth.requireUser, (req, res) => {
   const date = req.query.date || T.localDate();
-  const courses = db.q('SELECT * FROM courses ORDER BY id').all();
+  const scope = scopeOf(req.user);
+  const courses = db.q('SELECT * FROM courses ORDER BY id').all().filter(c => allowed(scope, c.id));
+  const links = db.q('SELECT ct.course_id, u.id, u.name FROM course_teachers ct JOIN users u ON u.id = ct.user_id ORDER BY u.name').all();
   const totals = db.q('SELECT course_id, COUNT(*) AS c FROM students WHERE active = 1 GROUP BY course_id').all();
   const att = db.q('SELECT course_id, status, COUNT(*) AS c FROM attendances WHERE date = ? GROUP BY course_id, status').all(date);
   const tmap = Object.fromEntries(totals.map(t => [t.course_id, t.c]));
@@ -256,7 +307,7 @@ app.get('/api/courses', auth.requireUser, (req, res) => {
     const get = s => (rows.find(r => r.status === s) || { c: 0 }).c;
     const present = get('A_TIEMPO') + get('TARDE');
     const total = tmap[c.id] || 0;
-    return { ...c, total_students: total, present, late: get('TARDE'), absent: get('AUSENTE'), percentage: total ? Math.round((present / total) * 100) : 0 };
+    return { ...c, teachers: links.filter(l => l.course_id === c.id).map(l => ({ id: l.id, name: l.name })), total_students: total, present, late: get('TARDE'), absent: get('AUSENTE'), percentage: total ? Math.round((present / total) * 100) : 0 };
   }));
 });
 
@@ -291,7 +342,20 @@ app.post('/api/courses', auth.requireAdmin, wrap((req, res) => {
   res.status(201).json(db.q('SELECT * FROM courses WHERE id = ?').get(id));
 }));
 
-app.patch('/api/courses/:id', auth.requireUser, wrap((req, res) => {
+app.put('/api/courses/:id/teachers', auth.requireAdmin, wrap((req, res) => {
+  const id = Number(req.params.id);
+  if (!db.q('SELECT 1 FROM courses WHERE id = ?').get(id)) return res.status(404).json({ error: 'Curso no encontrado' });
+  const ids = (Array.isArray(req.body && req.body.user_ids) ? req.body.user_ids : []).map(Number).filter(n => db.q('SELECT 1 FROM users WHERE id = ?').get(n));
+  db.transaction(() => {
+    db.q('DELETE FROM course_teachers WHERE course_id = ?').run(id);
+    for (const u of ids) db.q('INSERT OR IGNORE INTO course_teachers (course_id, user_id) VALUES (?, ?)').run(id, u);
+  })();
+  resetScopes();
+  broadcast('courses', {});
+  res.json({ ok: true, teachers: db.q('SELECT u.id, u.name FROM course_teachers ct JOIN users u ON u.id = ct.user_id WHERE ct.course_id = ? ORDER BY u.name').all(id) });
+}));
+
+app.patch('/api/courses/:id', auth.requireUser, ownCourse, wrap((req, res) => {
   let data;
   try {
     data = courseInput(req.body || {});
@@ -367,7 +431,8 @@ function contactError(d) {
 }
 
 app.get('/api/students', auth.requireUser, (req, res) => {
-  res.json(db.q(`${studentSelect} WHERE s.active = 1 ORDER BY s.last_name, s.first_name`).all());
+  const scope = scopeOf(req.user);
+  res.json(db.q(`${studentSelect} WHERE s.active = 1 ORDER BY s.last_name, s.first_name`).all().filter(st => allowed(scope, st.course_id)));
 });
 
 app.post('/api/students', auth.requireUser, wrap((req, res) => {
@@ -382,6 +447,7 @@ app.post('/api/students', auth.requireUser, wrap((req, res) => {
   const bad = contactError(d);
   if (bad) return res.status(400).json(bad);
   if (!db.q('SELECT 1 FROM courses WHERE id = ?').get(d.course_id)) return res.status(400).json({ error: 'Curso no válido', fields: ['course_id'] });
+  if (!allowed(scopeOf(req.user), d.course_id)) return deny(res);
   const inactive = db.q('SELECT id FROM students WHERE nfc_uid = ? AND active = 0').get(d.nfc_uid);
   if (inactive) db.q("UPDATE students SET nfc_uid = nfc_uid || '-OLD' || id WHERE id = ?").run(inactive.id);
   if (!d.student_code) {
@@ -398,12 +464,13 @@ app.post('/api/students', auth.requireUser, wrap((req, res) => {
   res.status(201).json(s);
 }));
 
-app.patch('/api/students/:id', auth.requireUser, wrap((req, res) => {
+app.patch('/api/students/:id', auth.requireUser, ownStudent, wrap((req, res) => {
   const d = studentInput(req.body || {});
   const bad = contactError(d);
   if (bad) return res.status(400).json(bad);
   if (d.nfc_uid !== undefined && (!d.nfc_uid || d.nfc_uid.length < 8)) return res.status(400).json({ error: 'UID no válido', fields: ['nfc_uid'] });
   for (const k of ['first_name', 'last_name']) if (k in d && !d[k]) return res.status(400).json({ error: 'El nombre no puede quedar vacío', fields: [k] });
+  if (d.course_id && !allowed(scopeOf(req.user), d.course_id)) return deny(res);
   if (d.course_id) {
     const cur = db.q('SELECT course_id, mascot FROM students WHERE id = ?').get(req.params.id);
     if (cur && cur.course_id !== d.course_id && db.q('SELECT 1 FROM students WHERE course_id = ? AND mascot = ? AND active = 1 AND id != ?').get(d.course_id, cur.mascot, req.params.id)) d.mascot = nextMascot(d.course_id, Number(req.params.id));
@@ -416,19 +483,19 @@ app.patch('/api/students/:id', auth.requireUser, wrap((req, res) => {
   res.json(s);
 }));
 
-app.delete('/api/students/:id', auth.requireUser, wrap((req, res) => {
+app.delete('/api/students/:id', auth.requireUser, ownStudent, wrap((req, res) => {
   db.q('UPDATE students SET active = 0 WHERE id = ?').run(req.params.id);
   broadcast('student', { id: Number(req.params.id), active: 0 });
   res.json({ ok: true });
 }));
 
-app.get('/api/students/:id/links', auth.requireUser, wrap((req, res) => {
+app.get('/api/students/:id/links', auth.requireUser, ownStudent, wrap((req, res) => {
   const s = db.q('SELECT * FROM students WHERE id = ?').get(req.params.id);
   if (!s) return res.status(404).json({ error: 'No encontrado' });
   res.json({ telegram: notifier.telegramLink(s), whatsapp: notifier.whatsappLink(s.parent_phone, `Estimado/a ${s.parent_name || 'representante'}, le escribimos de ${config.institutionName} sobre ${s.first_name}.`), phone: notifier.normalizePhone(s.parent_phone) });
 }));
 
-app.post('/api/students/:id/message', auth.requireUser, wrap(async (req, res) => {
+app.post('/api/students/:id/message', auth.requireUser, ownStudent, wrap(async (req, res) => {
   try {
     const results = await notifier.sendCustom(Number(req.params.id), req.body || {});
     res.json({ results });
@@ -438,7 +505,7 @@ app.post('/api/students/:id/message', auth.requireUser, wrap(async (req, res) =>
   }
 }));
 
-app.post('/api/students/:id/preview', auth.requireUser, wrap((req, res) => {
+app.post('/api/students/:id/preview', auth.requireUser, ownStudent, wrap((req, res) => {
   const b = req.body || {};
   const kind = ['ARRIVAL', 'LATE', 'ABSENT', 'NOT_IN_CLASS', 'EMERGENCY', 'CUSTOM'].includes(b.kind) ? b.kind : 'CUSTOM';
   const p = notifier.preview(kind, Number(req.params.id), { subject: b.subject, text: b.text || ' ' });
@@ -446,7 +513,7 @@ app.post('/api/students/:id/preview', auth.requireUser, wrap((req, res) => {
   res.json(p);
 }));
 
-app.post('/api/students/:id/credential', auth.requireUser, wrap((req, res) => {
+app.post('/api/students/:id/credential', auth.requireUser, ownStudent, wrap((req, res) => {
   const out = C.issue(Number(req.params.id), Boolean(req.body && req.body.rotate));
   if (!out) return res.status(404).json({ error: 'No encontrado' });
   const h = H.get(Number(req.params.id));
@@ -454,9 +521,9 @@ app.post('/api/students/:id/credential', auth.requireUser, wrap((req, res) => {
   res.json({ ...out, url: h && h.consent && h.token ? `${base}/e/${h.token}` : `${base}/` });
 }));
 
-app.get('/api/students/:id/access', auth.requireUser, (req, res) => res.json(ST.accessInfo(Number(req.params.id))));
+app.get('/api/students/:id/access', auth.requireUser, ownStudent, (req, res) => res.json(ST.accessInfo(Number(req.params.id))));
 
-app.post('/api/students/:id/reset-access', auth.requireUser, wrap((req, res) => {
+app.post('/api/students/:id/reset-access', auth.requireUser, ownStudent, wrap((req, res) => {
   ST.resetAccess(Number(req.params.id));
   res.json(ST.accessInfo(Number(req.params.id)));
 }));
@@ -476,7 +543,7 @@ A.setWriteBuilder(st => {
 });
 let lastBase = null;
 
-app.post('/api/students/:id/write-card', auth.requireUser, wrap((req, res) => {
+app.post('/api/students/:id/write-card', auth.requireUser, ownStudent, wrap((req, res) => {
   const s = db.q('SELECT id FROM students WHERE id = ? AND active = 1').get(req.params.id);
   if (!s) return res.status(404).json({ error: 'No encontrado' });
   lastBase = publicBase(req);
@@ -536,18 +603,21 @@ app.post('/api/student/adopt', ST.requireStudent, wrap((req, res) => {
   if (out.status === 200) broadcast('mascot_adopted', { student_id: req.student.id, mascot: out.body.student.mascot });
   res.status(out.status).json(out.body);
 }));
-app.get('/api/early-warning', auth.requireUser, (req, res) => res.json(P.atRisk(3)));
+app.get('/api/early-warning', auth.requireUser, (req, res) => {
+  const scope = scopeOf(req.user);
+  res.json(P.atRisk(3).filter(r => allowed(scope, r.course_id)));
+});
 app.patch('/api/student/me', ST.requireStudent, wrap((req, res) => res.json(ST.update(req.student.id, req.body || {}))));
 app.get('/api/student/health', ST.requireStudent, (req, res) => res.json({ health: H.get(req.student.id) }));
 
-app.get('/api/students/:id/health', auth.requireUser, wrap((req, res) => {
+app.get('/api/students/:id/health', auth.requireUser, ownStudent, wrap((req, res) => {
   const id = Number(req.params.id);
   const h = H.get(id);
   if (req.query.view) H.logAccess(id, 'APP', req, req.user.id);
   res.json({ health: h, access: H.accessLog(id) });
 }));
 
-app.put('/api/students/:id/health', auth.requireUser, wrap((req, res) => {
+app.put('/api/students/:id/health', auth.requireUser, ownStudent, wrap((req, res) => {
   const id = Number(req.params.id);
   if (!db.q('SELECT 1 FROM students WHERE id = ?').get(id)) return res.status(404).json({ error: 'Estudiante no encontrado' });
   const h = H.save(id, req.body, req.user.id);
@@ -555,7 +625,7 @@ app.put('/api/students/:id/health', auth.requireUser, wrap((req, res) => {
   res.json({ health: h, access: H.accessLog(id) });
 }));
 
-app.post('/api/students/:id/health/token', auth.requireUser, wrap((req, res) => {
+app.post('/api/students/:id/health/token', auth.requireUser, ownStudent, wrap((req, res) => {
   const token = H.rotateToken(Number(req.params.id));
   if (!token) return res.status(404).json({ error: 'Primero guarda la ficha médica' });
   res.json({ token });
@@ -600,6 +670,8 @@ app.get('/e/:token/foto', (req, res) => {
 function imageAuth(req, res, next) {
   const id = auth.readToken(String(req.query.t || ''));
   if (!id) return res.status(401).end();
+  req.user = db.q('SELECT id, role FROM users WHERE id = ?').get(id) || null;
+  if (!req.user) return res.status(401).end();
   next();
 }
 
@@ -618,7 +690,8 @@ app.get('/api/snapshots/:id', imageAuth, (req, res) => {
 });
 
 app.get('/api/attendance', auth.requireUser, (req, res) => {
-  res.json(A.listByDate(req.query.date || T.localDate()));
+  const scope = scopeOf(req.user);
+  res.json(A.listByDate(req.query.date || T.localDate()).filter(r => allowed(scope, r.course_id)));
 });
 
 function dataUrlToBuffer(s) {
@@ -641,8 +714,19 @@ app.post('/api/attendance/scan', auth.requireTerminalOrUser, wrap((req, res) => 
     ntag: b.ntag === true,
     simulated: !req.viaTerminal
   });
+  if (req.viaTerminal && out.body && !['DUPLICADO', 'GRABADO', 'ERROR_GRABAR'].includes(out.body.status)) askCamera(terminalId);
   res.status(out.code).json(out.body);
 }));
+
+function askCamera(terminalId) {
+  const cam = db.q('SELECT ip, last_seen FROM terminals WHERE id = ?').get(`${terminalId}#CAM`);
+  if (!cam || !cam.ip || Date.now() - Date.parse(cam.last_seen) > 120000 || typeof fetch !== 'function') return;
+  const ip = /^[0-9a-f.:]+$/i.test(cam.ip) ? cam.ip : null;
+  if (!ip) return;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 1500);
+  fetch(`http://${ip.includes(':') ? `[${ip}]` : ip}/foto`, { headers: { 'X-Terminal-Key': config.terminalKey }, signal: ctrl.signal }).catch(() => {}).finally(() => clearTimeout(timer));
+}
 
 app.post('/api/attendance/batch', auth.requireTerminalOrUser, wrap((req, res) => {
   const b = req.body || {};
@@ -652,11 +736,11 @@ app.post('/api/attendance/batch', auth.requireTerminalOrUser, wrap((req, res) =>
   res.json({ processed: results.length, results });
 }));
 
-app.get('/api/roll/:courseId', auth.requireUser, (req, res) => {
+app.get('/api/roll/:courseId', auth.requireUser, ownCourse, (req, res) => {
   res.json(A.rollForCourse(Number(req.params.courseId), req.query.date || T.localDate()));
 });
 
-app.post('/api/roll/:courseId/confirm', auth.requireUser, wrap((req, res) => {
+app.post('/api/roll/:courseId/confirm', auth.requireUser, ownCourse, wrap((req, res) => {
   const entries = Array.isArray(req.body.students) ? req.body.students : [];
   res.json(A.confirmRoll(Number(req.params.courseId), req.body.date || T.localDate(), entries, req.user.id));
 }));
@@ -665,9 +749,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 app.get('/api/export.csv', imageAuth, (req, res) => {
   const to = DATE_RE.test(req.query.to || '') ? req.query.to : T.localDate();
   const from = DATE_RE.test(req.query.from || '') ? req.query.from : to;
-  const rows = db.q(`SELECT a.date, a.time_recorded, s.student_code, s.last_name, s.first_name, c.name AS course, a.status, a.source, a.review_state, a.in_class
+  const rows = db.q(`SELECT a.course_id, a.date, a.time_recorded, s.student_code, s.last_name, s.first_name, c.name AS course, a.status, a.source, a.review_state, a.in_class
     FROM attendances a JOIN students s ON s.id = a.student_id JOIN courses c ON c.id = a.course_id
-    WHERE a.date BETWEEN ? AND ? ORDER BY a.date, c.name, s.last_name, s.first_name`).all(from, to);
+    WHERE a.date BETWEEN ? AND ? ORDER BY a.date, c.name, s.last_name, s.first_name`).all(from, to).filter(r => allowed(scopeOf(req.user), r.course_id));
   const ST = { A_TIEMPO: 'Puntual', TARDE: 'Atraso', AUSENTE: 'Ausente' };
   const SRC = { NFC: 'Tarjeta', MANUAL: 'Docente', AUTO: 'Automático', OFFLINE: 'Sin conexión' };
   const REV = { PENDIENTE: 'Pendiente', OK: 'Correcto', FRAUDE: 'Suplantación' };
@@ -682,22 +766,31 @@ app.get('/api/export.csv', imageAuth, (req, res) => {
   res.send('\uFEFF' + lines.join('\r\n'));
 });
 
-app.post('/api/attendance/:id/justify', auth.requireUser, wrap((req, res) => {
+app.post('/api/attendance/:id/justify', auth.requireUser, ownAttendance, wrap((req, res) => {
   const b = req.body || {};
   const r = A.justify(Number(req.params.id), b.justified !== false, b.note, req.user.id);
   if (!r) return res.status(404).json({ error: 'Registro no encontrado' });
   res.json(r);
 }));
 
-app.get('/api/review', auth.requireUser, (req, res) => res.json(A.listPendingReview()));
+app.get('/api/review', auth.requireUser, (req, res) => {
+  const scope = scopeOf(req.user);
+  res.json(A.listPendingReview().filter(r => allowed(scope, r.course_id)));
+});
 
-app.post('/api/review/:id', auth.requireUser, wrap((req, res) => {
+app.post('/api/review/:id', auth.requireUser, ownAttendance, wrap((req, res) => {
   const decision = req.body && req.body.decision;
   if (!['OK', 'FRAUDE'].includes(decision)) return res.status(400).json({ error: 'Decisión no válida' });
   res.json(A.decideReview(Number(req.params.id), decision, req.user.id));
 }));
 
-app.get('/api/notifications/pending', auth.requireUser, (req, res) => res.json(notifier.pending(2)));
+app.get('/api/notifications/pending', auth.requireUser, (req, res) => {
+  const scope = scopeOf(req.user);
+  const rows = notifier.pending(2);
+  if (!scope) return res.json(rows);
+  const ok = new Set(db.q(`SELECT id FROM students WHERE course_id IN (${scope.map(Number).join(',') || '0'})`).all().map(r => r.id));
+  res.json(rows.filter(n => ok.has(n.student_id)));
+});
 
 app.post('/api/notifications/:id/sent', auth.requireUser, wrap((req, res) => {
   const n = notifier.markManual(Number(req.params.id), req.user.id);
@@ -716,7 +809,9 @@ app.post('/api/notifications/:id/resend', auth.requireUser, wrap(async (req, res
 
 app.get('/api/notifications', auth.requireUser, (req, res) => {
   const limit = Math.min(200, parseInt(req.query.limit || '60', 10));
-  res.json(db.q(`SELECT n.*, s.first_name || ' ' || s.last_name AS student_name FROM notifications n LEFT JOIN students s ON s.id = n.student_id ORDER BY n.id DESC LIMIT ?`).all(limit));
+  const scope = scopeOf(req.user);
+  const where = scope ? `WHERE s.course_id IN (${scope.map(Number).join(',') || '0'})` : '';
+  res.json(db.q(`SELECT n.*, s.first_name || ' ' || s.last_name AS student_name FROM notifications n LEFT JOIN students s ON s.id = n.student_id ${where} ORDER BY n.id DESC LIMIT ?`).all(limit));
 });
 
 function touchTerminal(id, kind, req, b = {}) {
@@ -737,9 +832,28 @@ app.post('/api/terminal/ping', wrap((req, res) => {
 }));
 
 app.get('/api/terminals', auth.requireUser, (req, res) => {
-  const rows = db.q('SELECT * FROM terminals ORDER BY id').all();
+  const rows = db.q('SELECT t.*, c.name AS course_name, c.code AS course_code FROM terminals t LEFT JOIN courses c ON c.id = t.course_id ORDER BY t.id').all();
   res.json(rows.map(r => ({ ...r, online: r.last_seen ? Date.now() - Date.parse(r.last_seen) < 90000 : false })));
 });
+
+app.patch('/api/terminals/:id', auth.requireAdmin, wrap((req, res) => {
+  const id = String(req.params.id).slice(0, 60);
+  if (!db.q('SELECT 1 FROM terminals WHERE id = ?').get(id)) return res.status(404).json({ error: 'Lector no encontrado' });
+  const b = req.body || {};
+  if (b.course_id !== undefined) {
+    const cid = b.course_id ? Number(b.course_id) : null;
+    if (cid && !db.q('SELECT 1 FROM courses WHERE id = ?').get(cid)) return res.status(400).json({ error: 'Curso no válido' });
+    db.q('UPDATE terminals SET course_id = ? WHERE id = ?').run(cid, id);
+  }
+  if (b.label !== undefined) db.q('UPDATE terminals SET label = ? WHERE id = ?').run(String(b.label).trim().slice(0, 60) || null, id);
+  broadcast('terminal', { id });
+  res.json(db.q('SELECT t.*, c.name AS course_name, c.code AS course_code FROM terminals t LEFT JOIN courses c ON c.id = t.course_id WHERE t.id = ?').get(id));
+}));
+app.delete('/api/terminals/:id', auth.requireAdmin, wrap((req, res) => {
+  db.q('DELETE FROM terminals WHERE id = ?').run(String(req.params.id).slice(0, 60));
+  broadcast('terminal', { id: req.params.id });
+  res.json({ ok: true });
+}));
 
 app.post('/api/camera/snapshot', express.raw({ type: ['image/jpeg', 'application/octet-stream'], limit: '2mb' }), auth.requireTerminalOrUser, wrap((req, res) => {
   const terminalId = String(req.headers['x-terminal-id'] || (req.body && req.body.terminal_id) || 'ESP32-AULA-1').slice(0, 40);
@@ -778,7 +892,8 @@ server.on('upgrade', (req, socket, head) => {
     socket.destroy();
     return;
   }
-  wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+  const uid = auth.readToken(url.searchParams.get('token'));
+  wss.handleUpgrade(req, socket, head, ws => { ws.userId = uid; wss.emit('connection', ws, req); });
 });
 
 let smsGateway = null;

@@ -180,6 +180,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS mascot_history (
   absences INTEGER NOT NULL DEFAULT 0
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS course_teachers (
+  course_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  PRIMARY KEY (course_id, user_id)
+)`);
+addColumns('terminals', [['course_id', 'INTEGER'], ['label', 'TEXT']]);
+addColumns('attendances', [['other_room', 'INTEGER NOT NULL DEFAULT 0']]);
+
 const MASCOT_COUNT = 40;
 function nextMascot(courseId, exceptId) {
   const used = new Set(db.prepare('SELECT mascot FROM students WHERE course_id = ? AND active = 1 AND mascot IS NOT NULL AND id != ?').all(courseId, exceptId || 0).map(r => r.mascot));

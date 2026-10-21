@@ -2,8 +2,9 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WebServer.h>
 
-#define FIRMWARE "camara-3.1"
+#define FIRMWARE "camara-3.2"
 #define PIN_FLASH 4
 
 #define PWDN_GPIO_NUM 32
@@ -29,6 +30,8 @@ unsigned long lastWifiTry = 0;
 unsigned long lastShot = 0;
 bool cameraOk = false;
 bool wifiWasUp = false;
+bool webStarted = false;
+WebServer web(80);
 int lastPingCode = 0;
 
 void IRAM_ATTR onTrigger();
@@ -37,6 +40,7 @@ bool initCamera();
 void ensureWifi();
 void ping();
 void captureAndSend();
+void startWeb();
 
 void IRAM_ATTR onTrigger() {
   triggered = true;
@@ -94,6 +98,7 @@ void ensureWifi() {
       wifiWasUp = true;
       Serial.print("WiFi OK, IP de la camara: ");
       Serial.println(WiFi.localIP());
+      startWeb();
     }
     return;
   }
@@ -147,6 +152,23 @@ void captureAndSend() {
   esp_camera_fb_return(fb);
 }
 
+void startWeb() {
+  if (webStarted) return;
+  static const char *keys[] = {"X-Terminal-Key"};
+  web.collectHeaders(keys, 1);
+  web.on("/foto", []() {
+    if (web.header("X-Terminal-Key") != TERMINAL_KEY) {
+      web.send(401, "text/plain", "clave");
+      return;
+    }
+    triggered = true;
+    web.send(200, "text/plain", "ok");
+  });
+  web.begin();
+  webStarted = true;
+  Serial.println("Disparo por WiFi listo: el servidor pide la foto en cada toque, sin cable");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -170,6 +192,7 @@ void setup() {
     Serial.print("WiFi OK, IP de la camara: ");
     Serial.println(WiFi.localIP());
     Serial.println("Servidor: " + baseUrl());
+    startWeb();
     ping();
     lastPing = millis();
   } else {
@@ -180,6 +203,7 @@ void setup() {
 
 void loop() {
   ensureWifi();
+  if (webStarted) web.handleClient();
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == 'f' || ch == 'F') {
@@ -190,7 +214,7 @@ void loop() {
   if (triggered) {
     triggered = false;
     Serial.println("Disparo recibido");
-    if (millis() - lastShot > 400) {
+    if (millis() - lastShot > 1500) {
       lastShot = millis();
       captureAndSend();
     }

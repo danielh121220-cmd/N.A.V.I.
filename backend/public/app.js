@@ -107,7 +107,7 @@
   const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
   const hhmm = t => (t || '').slice(0, 5);
   const colorFor = id => PALETTE[Math.abs(Number(id) || 0) % PALETTE.length];
-  const firstName = n => String(n || '').split(' ')[0];
+  const firstName = n => { const p = String(n || '').trim().split(/\s+/); const i = p.findIndex(w => !/^(prof|profe|profesora?|lic|ing|dr|dra|msc|mg|sr|sra|srta)\.?$/i.test(w)); return p[i < 0 ? 0 : i] || ''; };
   const isAdmin = () => S.user && S.user.role === 'ADMINISTRADOR';
   const canConfigure = () => isAdmin() || S.demo;
   const haptic = (p = 8) => {
@@ -198,6 +198,7 @@
     return `<span class="pill ${s.cls}">${s.label}</span>`;
   }
   const reviewPill = r => (r && r.review_state === 'PENDIENTE' ? '<span class="pill p-rev">Revisar</span>' : '');
+  const roomPill = r => (r && r.other_room ? '<span class="pill p-info">Otra aula</span>' : '');
 
   function segHtml(items, current, act, extra = '') {
     return `<div class="seg" ${extra}><span class="thumb"></span>${items.map(([k, l, n]) => `<button type="button" class="${k === current ? 'on' : ''}" data-act="${act}" data-k="${esc(k)}">${l}${n != null ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>`;
@@ -1054,7 +1055,7 @@
   }
 
   function coursesHtml() {
-    if (!S.courses.length) return emptyHtml('sleepy', 'Aún no hay cursos', 'Crea uno desde Ajustes.');
+    if (!S.courses.length) return emptyHtml('sleepy', isAdmin() ? 'Aún no hay cursos' : 'Aún no tienes cursos', isAdmin() ? 'Crea uno desde Ajustes.' : 'Pídele al administrador que te asigne tus cursos.');
     return S.courses.map(c => {
       const tot = c.total_students || 0;
       const ok = tot ? ((c.present - c.late) / tot) * 100 : 0;
@@ -1079,7 +1080,7 @@
     else if (f !== 'ALL') list = list.filter(r => r.status === f);
     list = list.slice(0, 60);
     if (!list.length) return emptyHtml('sleepy', f === 'ALL' ? 'Esperando tarjetas' : 'Nada por aquí', f === 'ALL' ? 'Los registros aparecen al instante cuando alguien acerca su tarjeta.' : 'No hay registros con este filtro.');
-    return list.map(r => `<button class="cell has-av ${S.fresh.has(r.id) ? 'enter' : ''}" data-act="record" data-id="${r.id}">${avatar(r)}<div class="grow"><div class="t b">${esc(r.student_name)}</div><div class="s">${esc(r.course_code)} · ${hhmm(r.time_recorded)} · ${SOURCE[r.source] || r.source}</div></div>${reviewPill(r)}${statusPill(r)}</button>`).join('');
+    return list.map(r => `<button class="cell has-av ${S.fresh.has(r.id) ? 'enter' : ''}" data-act="record" data-id="${r.id}">${avatar(r)}<div class="grow"><div class="t b">${esc(r.student_name)}</div><div class="s">${esc(r.course_code)} · ${hhmm(r.time_recorded)} · ${SOURCE[r.source] || r.source}${r.other_room ? ' · otra aula' : ''}</div></div>${reviewPill(r)}${statusPill(r)}</button>`).join('');
   }
 
   function notifGroups(limit = 10) {
@@ -1678,7 +1679,7 @@
   function setupHtml() {
     if (S.demo || store.get('navi_setup_hide') === '1') return '';
     const steps = [
-      [S.courses.length > 0, 'Crea tu primer curso', isAdmin() ? 'Ajustes → Nuevo curso, con su hora de entrada' : 'Pídeselo al administrador del colegio', 'ajustes', 'calendar', 'red'],
+      [S.courses.length > 0, isAdmin() ? 'Crea tu primer curso' : 'Recibe tu curso', isAdmin() ? 'Ajustes → Nuevo curso, con su hora de entrada' : 'El administrador te lo asigna en Ajustes → Cursos', 'ajustes', 'calendar', 'red'],
       [S.students.length > 0, 'Agrega a tus estudiantes', 'Con su representante y el número de su tarjeta o llavero', 'alumnos', 'users', 'blue'],
       [S.terminals.some(t => t.kind !== 'CAMARA'), 'Conecta el lector del aula', 'Copia la configuración en el firmware del ESP32', 'terminal', 'nfc', 'graphite'],
       [S.students.some(x => x.card_ver > 0), 'Graba las tarjetas', 'Estudiante → Tarjeta y acceso → Tarjeta nueva con el lector', 'alumnos', 'shield', 'green']
@@ -1747,7 +1748,7 @@
       title: r.student_name,
       body: `
         <div class="group" style="margin-top:6px">
-          <div class="cell has-av-lg" style="padding:12px 16px">${avatar(r, 'av-lg')}<div class="grow"><div class="t b" style="font-size:17px">${esc(r.student_name)}</div><div class="s">${esc(r.course_name)}</div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${statusPill(r)}${reviewPill(r)}${inClass}</div></div></div>
+          <div class="cell has-av-lg" style="padding:12px 16px">${avatar(r, 'av-lg')}<div class="grow"><div class="t b" style="font-size:17px">${esc(r.student_name)}</div><div class="s">${esc(r.course_name)}</div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${statusPill(r)}${reviewPill(r)}${roomPill(r)}${inClass}</div></div></div>
           <div class="cell"><div class="grow t">Hora</div><div class="v tnum">${hhmm(r.time_recorded)}</div></div>
           <div class="cell"><div class="grow t">Origen</div><div class="v">${SOURCE[r.source] || r.source}</div></div>
           ${r.card_verified != null ? `<div class="cell"><div class="grow t">Tarjeta</div><div class="v">${r.card_verified ? '<span class="pill p-ok">Firma verificada</span>' : '<span class="pill p-abs">Sin firma válida</span>'}</div></div>` : ''}
@@ -1816,7 +1817,7 @@
       S.rollStart = Date.now();
       const c = S.courses.find(x => x.id === S.rollCourse);
       const data = c ? rollData(c.id) : [];
-      if (!S.courses.length) return `<div class="page-head"><div><h1>Pase de lista</h1></div></div><div class="group">${emptyHtml('sleepy', 'Aún no hay cursos', isAdmin() ? 'Crea el primero en Ajustes → Nuevo curso.' : 'Pídele al administrador que cree tu curso.')}</div>`;
+      if (!S.courses.length) return `<div class="page-head"><div><h1>Pase de lista</h1></div></div><div class="group">${emptyHtml('sleepy', 'Aún no hay cursos', isAdmin() ? 'Crea el primero en Ajustes → Nuevo curso.' : 'Pídele al administrador que te asigne tu curso en Ajustes → Cursos.')}</div>`;
       return `
         <div class="page-head"><div><div class="eyebrow">${c ? esc(c.name) : ''}</div><h1>Pase de lista</h1><p>Mira el salón y toca solo a quien <b>no</b> está. Los demás ya vienen marcados por su tarjeta.</p></div>
         <div class="actions"><span class="timer" id="rollTimer">${icon('clock')} 0:00</span><button class="btn btn-gray btn-sm keep" data-act="allIn">Todos en el aula</button></div></div>
@@ -2423,7 +2424,12 @@
 
   function terminalsHtml() {
     if (!S.terminals.length) return `<div class="cell has-icon">${ico('info', 'blue')}<div class="grow"><div class="t">Sin hardware conectado</div><div class="s" style="white-space:normal">Cuando el lector o la cámara se enciendan con la configuración de abajo, aparecerán aquí.</div></div></div>`;
-    return S.terminals.map(t => `<div class="cell has-icon">${ico(t.kind === 'CAMARA' ? 'camera' : 'nfc', t.online ? 'green' : 'gray')}<div class="grow"><div class="t">${esc(t.id.replace('#CAM', ' · cámara'))}</div><div class="s">${esc(t.ip || '')}${t.firmware ? ' · ' + esc(t.firmware) : ''}${t.rssi ? ` · ${t.rssi} dBm` : ''} · ${t.last_seen ? ago(t.last_seen) : 'nunca'}</div></div><span class="pill ${t.online ? 'p-ok' : 'p-none'}">${t.online ? 'En línea' : 'Desconectado'}</span></div>`).join('');
+    const adm = isAdmin();
+    return S.terminals.map(t => {
+      const tag = adm ? 'button' : 'div';
+      const room = t.kind === 'CAMARA' ? '' : (t.course_code ? `Aula de ${esc(t.course_code)}` : 'Sin aula asignada') + ' · ';
+      return `<${tag} class="cell has-icon" ${adm ? `data-act="terminalEdit" data-id="${esc(t.id)}"` : ''}>${ico(t.kind === 'CAMARA' ? 'camera' : 'nfc', t.online ? 'green' : 'gray')}<div class="grow"><div class="t">${esc(t.label || t.id.replace('#CAM', ' · cámara'))}</div><div class="s">${room}${esc(t.ip || '')}${t.firmware ? ' · ' + esc(t.firmware) : ''} · ${t.last_seen ? ago(t.last_seen) : 'nunca'}</div></div><span class="pill ${t.online ? 'p-ok' : 'p-none'}">${t.online ? 'En línea' : 'Desconectado'}</span></${tag}>`;
+    }).join('');
   }
 
   VIEWS.terminal = {
@@ -2524,6 +2530,41 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
   handlers.simClone = () => simCard(true);
   handlers.simManual = () => { const i = $('#manualUid'); if (i && i.value.trim()) { simTap(i.value.trim()); i.value = ''; } };
   handlers.reloadTerminals = () => loadTerminals();
+  handlers.terminalEdit = el => {
+    const t = S.terminals.find(x => x.id === el.dataset.id);
+    if (!t) return;
+    const cam = t.kind === 'CAMARA';
+    openSheet({
+      title: cam ? 'Cámara' : 'Lector',
+      left: `<button class="btn btn-plain" data-close>Cancelar</button>`,
+      right: `<button class="btn btn-plain" id="saveTerm" style="font-weight:600">Guardar</button>`,
+      body: `
+        <div class="notif-hero">${ico(cam ? 'camera' : 'nfc', t.online ? 'green' : 'gray')}<div><b>${esc(t.id.replace('#CAM', ' · cámara'))}</b><small>${esc(t.ip || '')}${t.firmware ? ' · ' + esc(t.firmware) : ''}</small></div></div>
+        <form id="termForm" class="group" novalidate>
+          ${frow('label', 'Nombre', { value: t.label || '', placeholder: cam ? 'Cámara del aula 3B' : 'Lector del aula 3B', attrs: 'maxlength="60"' })}
+          ${cam ? '' : `<label class="frow"><span>Aula de</span><select name="course_id"><option value="">Sin aula (cualquier curso)</option>${S.courses.map(c => `<option value="${c.id}" ${t.course_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>`}
+        </form>
+        <p class="group-foot">${cam ? 'La cámara toma la foto de los toques del lector que tiene su mismo nombre (TERMINAL_ID).' : 'Cualquier estudiante puede marcar en este lector y la asistencia cuenta para su propio curso. Si es de otro curso, el registro dice "otra aula".'}</p>
+        ${t.online ? '' : '<div class="group" style="margin-top:18px"><button type="button" class="cell center danger" id="delTerm">Quitar de la lista</button></div>'}`,
+      onMount(sheet) {
+        const form = $('#termForm', sheet);
+        $('#saveTerm', sheet).addEventListener('click', async () => {
+          const body = { label: form.label.value };
+          if (form.course_id) body.course_id = form.course_id.value ? Number(form.course_id.value) : null;
+          try {
+            await api(`/terminals/${encodeURIComponent(t.id)}`, { method: 'PATCH', body });
+            await loadTerminals();
+            toast({ title: 'Guardado', mood: 'happy', sound: 'success' });
+            closeSheet();
+          } catch (e) { toast({ title: 'No se pudo', text: e.message, mood: 'sad' }); }
+        });
+        const del = $('#delTerm', sheet);
+        if (del) del.addEventListener('click', () => confirmTap(del, 'Toca otra vez para quitarlo', async () => {
+          try { await api(`/terminals/${encodeURIComponent(t.id)}`, { method: 'DELETE' }); await loadTerminals(); closeSheet(); } catch (e) { toast({ title: 'No se pudo', text: e.message, mood: 'sad' }); }
+        }));
+      }
+    });
+  };
   handlers.copyCfg = () => copyText($('#fwCfg').textContent, 'Pégalo en config.h de los firmwares.');
   handlers.camToggle = async el => {
     if (el.checked) {
@@ -2579,9 +2620,40 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
         <label class="frow" style="--inset:60px">${ico('clock', 'blue')}<span>Entrada</span><input type="time" name="schedule_start" value="${esc(c.schedule_start)}"></label>
         <label class="frow" style="--inset:60px">${ico('bolt', 'orange')}<span>Tolerancia</span><input type="number" name="late_tolerance_min" min="0" max="120" value="${c.late_tolerance_min}" inputmode="numeric"><span class="unit">min</span></label>
         <label class="frow" style="--inset:60px">${ico('door', 'graphite')}<span>Ausente tras</span><input type="number" name="absent_limit_min" min="5" max="480" value="${c.absent_limit_min}" inputmode="numeric"><span class="unit">min</span></label>
+        <${isAdmin() ? 'button' : 'div'} class="cell has-icon" ${isAdmin() ? `data-act="courseTeachers" data-id="${c.id}"` : ''} style="--inset:60px">${ico('users', 'indigo')}<div class="grow"><div class="t">Docentes</div><div class="s">${(c.teachers || []).length ? esc(c.teachers.map(t => t.name).join(', ')) : 'Sin docente: solo lo ve el administrador'}</div></div>${isAdmin() ? icon('chevron', 'chev') : ''}</${isAdmin() ? 'button' : 'div'}>
         <button class="cell center" data-act="saveCourse">Guardar horario</button>
       </div>`).join('');
   }
+  handlers.courseTeachers = async el => {
+    const c = S.courses.find(x => x.id === Number(el.dataset.id));
+    if (!c) return;
+    let users;
+    try { users = await api('/users'); } catch (e) { return toast({ title: 'No se pudo', text: e.message, mood: 'sad' }); }
+    const on = new Set((c.teachers || []).map(t => t.id));
+    openSheet({
+      title: 'Docentes',
+      left: `<button class="btn btn-plain" data-close>Cancelar</button>`,
+      right: `<button class="btn btn-plain" id="saveTeachers" style="font-weight:600">Guardar</button>`,
+      body: `
+        <div class="notif-hero">${ico('users', 'indigo')}<div><b>${esc(c.name)}</b><small>Quienes marques verán este curso, sus estudiantes, su pase de lista y sus avisos.</small></div></div>
+        <div class="group">${users.map(u => `<div class="cell has-av"><div class="me-bot">${NaviBots.svg(u.avatar || 'triangle', 'neutral')}</div><div class="grow"><div class="t">${esc(u.name)}</div><div class="s">${esc(u.email)} · ${roleName(u.role)}</div></div><label class="switch"><input type="checkbox" value="${u.id}" ${on.has(u.id) ? 'checked' : ''}><span></span></label></div>`).join('')}</div>
+        <p class="group-foot">El administrador ve todos los cursos aunque no esté marcado. Cada docente crea su propia cuenta en la pantalla de inicio con "Crear cuenta".</p>`,
+      onMount(sheet) {
+        $('#saveTeachers', sheet).addEventListener('click', async ev => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          try {
+            const ids = $$('input[type=checkbox]:checked', sheet).map(i => Number(i.value));
+            await api(`/courses/${c.id}/teachers`, { method: 'PUT', body: { user_ids: ids } });
+            S.courses = await api('/courses');
+            toast({ title: 'Docentes guardados', text: c.name, mood: 'happy', sound: 'success' });
+            closeSheet();
+            if (S.view === 'ajustes') renderView();
+          } catch (e) { toast({ title: 'No se pudo', text: e.message, mood: 'sad' }); btn.disabled = false; }
+        });
+      }
+    });
+  };
 
   VIEWS.ajustes = {
     html() {

@@ -61,6 +61,8 @@ La pantalla OLED sigue en GPIO 21 y 22.
 
 ## 3. Cámara: ESP32-CAM
 
+Desde camara-3.2 la cámara funciona **solo con WiFi**: en cada toque el servidor le pide la foto. El cable de disparo de abajo es opcional (la foto sale unos milisegundos antes). Lo único obligatorio es su fuente de 5 V.
+
 | Desde | Hacia | Notas |
 | --- | --- | --- |
 | GPIO 25 del lector | GPIO 13 del ESP32-CAM | Pulso de disparo en el momento del toque |
@@ -140,7 +142,7 @@ Si cargas el ejemplo *I2C Scanner* deberías ver:
 1. Arranca el servidor con `INICIAR_NAVI.bat`. Al iniciar, el servidor escribe `servidor.h` en las dos carpetas del firmware con la IP de tu PC, el puerto y la clave de terminal. `config.h` lo usa solo.
 2. En **ambas** carpetas abre `config.h` y escribe solo `WIFI_SSID` y `WIFI_PASS`. Deja el mismo `TERMINAL_ID` en el lector y en la cámara: así el servidor sabe que van juntos.
 3. En Arduino IDE instala las librerías **Adafruit PN532**, **Adafruit SSD1306**, **Adafruit GFX** y **ArduinoJson** (y **Adafruit VL53L0X** si usas el sensor).
-4. Sube `navi_esp32_pn532.ino` al ESP32 (placa *ESP32 Dev Module*) y `navi_esp32_cam.ino` al ESP32-CAM (placa *AI Thinker ESP32-CAM*).
+4. Sube `navi_esp32_pn532.ino` al ESP32 (placa *ESP32 Dev Module*, **Partition Scheme: Huge APP (3MB No OTA/1MB SPIFFS)**, porque con la partición por defecto no cabe) y `navi_esp32_cam.ino` al ESP32-CAM (placa *AI Thinker ESP32-CAM*).
 5. En **Lector → Hardware conectado** deben aparecer el lector y la cámara como "En línea".
 
 Si la IP de la PC cambia, vuelve a abrir `INICIAR_NAVI.bat` y vuelve a subir el programa. La guía paso a paso está en [`PROBAR_CON_LOS_MODULOS.md`](../PROBAR_CON_LOS_MODULOS.md).

@@ -10,7 +10,12 @@
 
 Requisitos: Android 7 o superior. Para leer y grabar tarjetas, el celular debe tener NFC activado.
 
-Versión actual: **3.8**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+Versión actual: **3.9**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+
+En la versión 3.9:
+
+- Cada docente ve solo sus cursos, y los lectores se asignan por aula (`docs/VARIOS_LECTORES_Y_CURSOS.md`).
+- La lista de Avisos ya no se ve encimada en el celular.
 
 En la versión 3.8:
 

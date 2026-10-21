@@ -19,8 +19,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 APP = os.path.join(ROOT, 'android', 'app', 'src', 'main')
 PACKAGE = 'ec.navi.app'
-VERSION_CODE = "9"
-VERSION_NAME = "3.8"
+VERSION_CODE = "10"
+VERSION_NAME = "3.9"
 
 
 def run(cmd):

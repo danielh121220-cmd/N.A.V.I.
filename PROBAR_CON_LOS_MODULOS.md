@@ -70,13 +70,14 @@ La cámara toma una foto en el momento en que el estudiante acerca la tarjeta. S
 
 **Conexiones**
 
-| Desde | Hacia |
-| --- | --- |
-| GPIO 25 del lector (ESP32) | GPIO 13 del ESP32-CAM |
-| GND del lector | GND del ESP32-CAM (tierra común, obligatoria) |
-| Fuente de 5 V y 2 A | 5V y GND del ESP32-CAM |
+La cámara **no necesita cable hacia el lector**: en cada toque el servidor le pide la foto por WiFi. Solo necesita corriente:
 
-No pongas tarjeta microSD en el ESP32-CAM: el GPIO 13 también lo usa la ranura SD.
+| Opción | Cómo |
+| --- | --- |
+| Con la placa ESP32-CAM-MB | Encájala y conecta su USB a un cargador de celular de 5 V |
+| Sin la placa | 5V y GND de la cámara a una fuente de 5 V y 2 A |
+
+El cable **GPIO 25 del lector → GPIO 13 de la cámara** (con GND común) es opcional: hace la foto unos milisegundos más rápido. Si lo usas, no pongas tarjeta microSD en la cámara.
 
 **Subir el programa**
 
