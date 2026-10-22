@@ -1,8 +1,8 @@
 # Video publicitario de N.A.V.I
 
-Archivo final: `docs/NAVI_anuncio.mp4` (1920×1080, 30 fps, 66 s, con música y efectos).
+Archivo final: `docs/NAVI_anuncio.mp4` (1920×1080, 30 fps, 79 s, con música y efectos).
 
-El lector y el llavero que aparecen son los modelos 3D reales de `hardware/cad/salida`, los mismos que se imprimen.
+El lector (azul), la cámara (blanca) y el llavero que aparecen son los modelos 3D reales de `hardware/cad/salida`, los mismos que se imprimen.
 
 ## Guion (títulos grandes, casi sin texto)
 
@@ -15,16 +15,19 @@ El lector y el llavero que aparecen son los modelos 3D reales de `hardware/cad/s
 | 0:12 | El llavero toca el lector: bip, luz verde, la mascota aparece en la pantalla | Toca. Listo. |
 | 0:17 | El lector girando sobre fondo negro | N.A.V.I · Asistencia con NFC. |
 | 0:21 | Panel del docente | El docente lo ve al instante. |
-| 0:25 | Notificación en el celular de la mamá | Y su familia, también. |
+| 0:25 | Notificación en el celular de la mamá, con correo, WhatsApp y SMS | Y su familia, también. |
 | 0:30 | Negro | ¿Faltó? Lo saben hoy. |
-| 0:33 | Las 40 mascotas | 40 mascotas. Una distinta para cada estudiante. |
-| 0:37 | Huevo que nace | Nace con tu primer toque. |
-| 0:41 | Corazones | Crece si llegas a tiempo. Y te extraña si faltas. |
-| 0:46 | El llavero se abre y muestra su chip NFC | Cada llavero, firmado. |
-| 0:49 | Ficha médica | En una emergencia, puede salvar una vida. |
-| 0:54 | Alerta temprana | Nadie se queda atrás. |
-| 0:57 | Tres palabras | Sin papel. Sin huellas. Sin filas. |
-| 1:00 | Logo | N.A.V.I · Asistencia que cuida. |
+| 0:33 | El lector azul y la cámara blanca: toque, luz verde y flash | Un lector. Una cámara. |
+| 0:37 | Cuatro aulas conectadas a un solo servidor | Todo el colegio. Una sola red. |
+| 0:42 | Las 40 mascotas | 40 mascotas. Una distinta para cada estudiante. |
+| 0:46 | Huevo que nace | Nace con tu primer toque. |
+| 0:51 | Corazones | Crece si llegas a tiempo. Y te extraña si faltas. |
+| 0:56 | El llavero se abre y muestra su chip NFC | Cada llavero, firmado. |
+| 0:59 | Ficha médica | En una emergencia, puede salvar una vida. |
+| 1:03 | Alerta temprana | Nadie se queda atrás. |
+| 1:07 | Recorrido guiado en el celular | Tu bot te enseña. En un minuto. |
+| 1:11 | Tres palabras | Sin papel. Sin huellas. Sin filas. |
+| 1:14 | Logo | N.A.V.I · Asistencia que cuida. |
 
 ## Fotos reales de Higgsfield
 

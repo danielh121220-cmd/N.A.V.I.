@@ -2,7 +2,7 @@ import numpy as np
 from scipy.signal import fftconvolve, butter, sosfilt
 from scipy.io import wavfile
 SR = 48000
-DUR = 66.0
+DUR = 79.5
 N = int(SR * DUR)
 rng = np.random.default_rng(7)
 music = np.zeros((N, 2))
@@ -91,6 +91,15 @@ def chirp(f0, f1, d):
     t = np.arange(int(d * SR)) / SR
     f = f0 + (f1 - f0) * np.sin(np.pi * t / d)
     return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.sin(np.pi * t / d) ** 2 * 0.12
+def shutter():
+    out = np.zeros(int(0.2 * SR))
+    for dt, g in [(0, 1.0), (0.055, 0.7)]:
+        x = bp(noise(0.08), 1500, 9000); t = np.arange(len(x)) / SR
+        i = int(dt * SR); out[i:i + len(x)] += x * np.exp(-t * 70) * 0.5 * g
+    return out
+def blip(f):
+    t = np.arange(int(0.18 * SR)) / SR
+    return (np.sin(2 * np.pi * f * t) + 0.25 * np.sin(4 * np.pi * f * t)) * np.exp(-t * 26) * np.minimum(1, t / 0.002) * 0.16
 def boom():
     n = int(1.8 * SR); t = np.arange(n) / SR
     f = 38 + 60 * np.exp(-t * 10)
@@ -114,7 +123,7 @@ for t0, n in [(0.4, 74), (1.6, 69), (3.1, 78), (4.5, 73), (6.4, 71), (7.9, 74), 
 
 breaks = [(30.1, 32.85)]
 in_break = lambda t: any(a <= t < b for a, b in breaks)
-END = 60.5
+END = 74.0
 b = 0
 while True:
     t = T0 + b * BEAT
@@ -162,11 +171,23 @@ put(sfx, 10.55, riser(1.9, 0.8))
 put(sfx, 15.2, beep()); put(sfx, 15.2 + 0.16, beep())
 put(sfx, 15.2, kick(0.4))
 put(sfx, 27.0, ding(), gain=0.8)
-for t0 in [17.6, 21.3, 25.5, 32.9, 37.3, 41.7, 46.5, 49.5, 54.1]:
+for t0 in [17.6, 21.3, 25.5, 32.9, 37.2, 42.0, 46.4, 50.8, 55.6, 58.6, 63.2, 66.6]:
     put(sfx, t0 - 0.45, whoosh(0.8, 0.9), pan=rng.uniform(-0.3, 0.3))
-for t0 in [57.5, 58.5, 59.5]:
+for t0 in [71.0, 72.0, 73.0]:
     put(sfx, t0, kick(1.0)); put(sfx, t0, boom(), gain=0.35)
-put(sfx, 39.2, ding(), gain=0.35)
+put(sfx, 48.3, ding(), gain=0.35)
+put(sfx, 34.95, beep()); put(sfx, 34.95 + 0.16, beep())
+put(sfx, 35.01, shutter(), pan=0.35, gain=0.9)
+for j in range(16):
+    i = j % 4
+    t0 = 37.2 + 1.55 + (j // 4) * 0.62 + i * 0.15 + 0.75
+    put(sfx, t0, blip(1568 + 196 * i), pan=[-0.5, 0.5, -0.5, 0.5][i], gain=0.5)
+for k in range(3):
+    put(sfx, 25.5 + 2.9 + k * 0.14, tick(), pan=-0.4 + k * 0.2, gain=0.8)
+put(sfx, 66.6 + 0.3, chirp(2400, 3400, 0.14), pan=-0.4)
+put(sfx, 66.6 + 0.45, chirp(2800, 3900, 0.1), pan=-0.4, gain=0.8)
+for t0 in [66.6 + 1.7, 66.6 + 3.0]:
+    put(sfx, t0, tick(), pan=0.4)
 
 mix = music + sfx
 t = np.arange(N) / SR

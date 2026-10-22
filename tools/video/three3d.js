@@ -18,7 +18,8 @@ export async function load(base = 'stl') {
 
 const WHITE = new THREE.Color('#f3f4f7');
 const BLUE = new THREE.Color('#0057D9');
-const GRAY = new THREE.Color('#a9aeb7');
+const SHELL = new THREE.Color('#0A5BD8');
+const ENGRAVE = new THREE.Color('#dbe8ff');
 
 function colored(geo, fn) {
   const g = geo.clone();
@@ -97,12 +98,12 @@ export function buildReader() {
   const g = new THREE.Group();
   const shellGeo = colored(GEO.lector_frente, (c, x, y, z, nz) => {
     const engr = z > 0.3 && z < 0.75 && Math.abs(nz) > 0.8 && y < 8 && y > -45;
-    c.copy(engr ? GRAY : WHITE);
+    c.copy(engr ? ENGRAVE : SHELL);
   });
   const shell = new THREE.Mesh(shellGeo, plastic());
   shell.castShadow = true;
   const panel = new THREE.Mesh(colored(GEO.lector_panel_negro, c => c.set('#0a0b0d')), plastic({ roughness: 0.22, clearcoat: 0.8, clearcoatRoughness: 0.15 }));
-  const back = new THREE.Mesh(colored(GEO.lector_tapa, c => c.copy(WHITE)), plastic());
+  const back = new THREE.Mesh(colored(GEO.lector_tapa, c => c.copy(SHELL)), plastic());
   back.scale.z = -1;
   back.position.z = 40;
   const vlBack = new THREE.Mesh(new THREE.PlaneGeometry(9, 7), new THREE.MeshBasicMaterial({ color: '#050506' }));

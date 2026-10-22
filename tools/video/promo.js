@@ -1,4 +1,32 @@
 const stage = document.getElementById('stage');
+const STY = document.createElement('style');
+STY.textContent = `
+.chips { position: absolute; display: flex; gap: 14px; }
+.chips span { display: inline-flex; align-items: center; gap: 10px; height: 54px; padding: 0 24px; border-radius: 27px; background: rgba(255,255,255,0.16); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); color: #fff; font: 600 26px 'Inter'; letter-spacing: -0.01em; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.22); will-change: transform, opacity; }
+.chips svg { width: 26px; height: 26px; }
+.net { position: absolute; inset: 0; }
+.net svg { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: visible; }
+.room { position: absolute; width: 400px; height: 124px; margin: -62px 0 0 -200px; border-radius: 30px; background: #fff; box-shadow: 0 30px 60px -30px rgba(0,30,80,0.28), 0 2px 8px rgba(0,0,0,0.04); display: flex; align-items: center; gap: 20px; padding: 0 26px; box-sizing: border-box; will-change: transform, opacity, filter; }
+.room .dev { position: relative; width: 52px; height: 72px; border-radius: 14px; background: linear-gradient(160deg, #2a7bff, #0a5bd8); flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2); }
+.room .dev::before { content: ""; position: absolute; left: 9px; right: 9px; top: 10px; height: 18px; border-radius: 5px; background: #0b0d12; }
+.room .dev::after { content: ""; position: absolute; left: 50%; bottom: 10px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: #5dff8a; box-shadow: 0 0 10px #34c759; }
+.room .cam { position: absolute; left: 66px; top: 22px; width: 24px; height: 32px; border-radius: 8px; background: #f3f4f7; box-shadow: 0 0 0 1px #d7dae0; }
+.room .cam::after { content: ""; position: absolute; left: 50%; top: 8px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: #0b0d12; }
+.room .tx { display: grid; gap: 4px; margin-left: 20px; min-width: 0; }
+.room .tx b { font: 700 30px 'Inter Display'; letter-spacing: -0.02em; color: #1d1d1f; }
+.room .tx small { font: 500 22px 'Inter'; color: #86868b; }
+.room .ct { margin-left: auto; font: 700 30px 'Inter Display'; color: #248a3d; font-variant-numeric: tabular-nums; }
+.hub { position: absolute; left: 960px; top: 690px; width: 230px; height: 230px; margin: -115px 0 0 -115px; border-radius: 60px; background: #fff; box-shadow: 0 40px 80px -30px rgba(10,124,255,0.45), 0 0 0 1px rgba(10,124,255,0.08); display: grid; place-items: center; will-change: transform; }
+.hub .ic { width: 132px; height: 132px; }
+.hub .ic svg { width: 100%; height: 100%; display: block; }
+.hub .ring { position: absolute; inset: -18px; border-radius: 76px; border: 3px solid rgba(10,124,255,0.5); opacity: 0; }
+.hub .lb { position: absolute; top: 262px; left: 50%; transform: translateX(-50%); white-space: nowrap; font: 600 26px 'Inter'; color: #86868b; }
+.pk { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #0a7cff; box-shadow: 0 0 16px 4px rgba(10,124,255,0.55); opacity: 0; }
+.botfloat { position: absolute; width: 150px; height: 150px; }
+.botfloat svg { width: 100%; height: 100%; }
+`;
+document.head.appendChild(STY);
+let OFF = 0;
 const PH = window.PHOTOS || {};
 const E = {
   out: t => 1 - Math.pow(1 - t, 3),
@@ -135,6 +163,8 @@ function laptop(img) {
 
 const S = [];
 function scene(start, end, build, update, o = {}) {
+  start += OFF;
+  end += OFF;
   const el = h('div', 'scene');
   if (o.bg) el.style.background = o.bg;
   const ctx = build(el) || {};
@@ -346,8 +376,12 @@ scene(25.5, 30.2, el => {
   const t2 = title('*también.*', { size: 110, top: 520, cls: 'white', hl: 'grad-warm' });
   css(t, { textAlign: 'left', left: '140px', right: 'auto' });
   css(t2, { textAlign: 'left', left: '140px', right: 'auto' });
-  el.append(bg, dim, ph, t, t2, h('div', 'grain'));
-  return { bg, ph, t, t2 };
+  const ch = h('div', 'chips');
+  css(ch, { left: '146px', top: '690px' });
+  const ic = { mail: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>', wa: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19.2z"/></svg>', sms: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>' };
+  ch.innerHTML = `<span>${ic.mail}Correo</span><span>${ic.wa}WhatsApp</span><span>${ic.sms}SMS</span>`;
+  el.append(bg, dim, ph, t, t2, ch, h('div', 'grain'));
+  return { bg, ph, t, t2, ch };
 }, (lt, s) => {
   const p = prog(lt, 0, 4.7, E.lin);
   s.ctx.bg.style.transform = `scale(${lerp(1.05, 1.12, p)})`;
@@ -358,6 +392,11 @@ scene(25.5, 30.2, el => {
   s.ctx.ph.note.style.opacity = prog(lt, 1.5, 1.8);
   reveal(s.ctx.t, lt, 2.0);
   reveal(s.ctx.t2, lt, 2.35);
+  s.ctx.ch.querySelectorAll('span').forEach((x, i) => {
+    const q = prog(lt, 2.9 + i * 0.14, 3.5 + i * 0.14, E.back);
+    x.style.opacity = prog(lt, 2.9 + i * 0.14, 3.15 + i * 0.14);
+    x.style.transform = `translateY(${(1 - q) * 26}px) scale(${lerp(0.85, 1, q)})`;
+  });
 }, { bg: '#222', fi: 0.35, fo: 0.35 });
 
 scene(30.1, 33.0, el => {
@@ -370,6 +409,7 @@ scene(30.1, 33.0, el => {
   reveal(s.ctx.t2, lt, 0.75, { stagger: 0.14 });
 }, { bg: '#000', fi: 0.2, fo: 0.25 });
 
+OFF = 9.1;
 scene(32.9, 37.4, el => {
   const g = h('div', 'mgrid');
   const items = [];
@@ -504,6 +544,7 @@ scene(54.1, 57.6, el => {
   fadeIn(s.ctx.sb, lt, 0.9, 0.7, 16);
 }, { bg: '#f5f5f7', fi: 0.3, fo: 0.25 });
 
+OFF = 13.5;
 [['Sin papel.', '#fff', 'ink'], ['Sin huellas.', '#000', 'white'], ['Sin filas.', '#0a7cff', 'white']].forEach(([w, bg, cls], i) => {
   scene(57.5 + i * 1.0, 58.55 + i * 1.0, el => {
     const t = title(w, { size: 200, top: 420, cls });
@@ -534,7 +575,157 @@ scene(60.5, 66.0, el => {
   fadeIn(s.ctx.ft, lt, 2.0, 0.8, 10);
 }, { bg: '#fff', fi: 0.05, fo: 0.8 });
 
-const DURATION = 66.0;
+OFF = 0;
+
+scene(32.9, 37.3, el => {
+  const glow = h('div', 'full');
+  glow.style.background = 'radial-gradient(60% 62% at 50% 64%, rgba(10,124,255,0.30), rgba(0,0,0,0) 72%)';
+  el.append(glow);
+  const v = view3d(el, { env: 0.8 });
+  v.key.position.set(-240, 300, 420); v.key.intensity = 1.9;
+  const rim = new V3.DirectionalLight('#5aa8ff', 2.4); rim.position.set(300, 140, -400); v.scene.add(rim);
+  const rim2 = new V3.DirectionalLight('#ffffff', 0.9); rim2.position.set(-300, 60, -300); v.scene.add(rim2);
+  const rd = G3.buildReader();
+  rd.setOled('idle', OLED_IDLE);
+  v.scene.add(rd.group);
+  const pod = G3.buildPod();
+  v.scene.add(pod.group);
+  const flash = h('div', 'full');
+  css(flash, { opacity: 0, background: 'radial-gradient(14% 20% at 64.5% 52%, rgba(255,255,255,1), rgba(255,255,255,0.35) 40%, rgba(255,255,255,0) 72%)' });
+  const t = title('Un lector. *Una cámara.*', { size: 112, top: 84, cls: 'white', hl: 'grad' });
+  const sb = sub('Cada toque queda con su foto.', { top: 232, size: 44, cls: 'gray' });
+  el.append(flash, t, sb);
+  return { v, rd, pod, flash, t, sb };
+}, (lt, s) => {
+  const c = s.ctx;
+  const p = prog(lt, 0, 4.4, E.sine);
+  const rise = prog(lt, 0, 1.3, E.out5);
+  c.rd.group.position.set(-62, lerp(-80, -58, rise), 0);
+  c.rd.group.rotation.set(0.06, Math.PI + lerp(0.42, 0.18, p), 0);
+  c.pod.group.position.set(78, lerp(-70, -44, prog(lt, 0.15, 1.45, E.out5)), 10);
+  c.pod.group.rotation.set(0.06, Math.PI + lerp(-0.5, -0.22, p), 0);
+  const T = 2.05;
+  const on = lt >= T;
+  c.rd.setOled(on ? 'hello' : 'idle', on ? OLED_HELLO : OLED_IDLE);
+  c.rd.setLed(on);
+  c.flash.style.opacity = lt >= T + 0.06 ? Math.exp(-(lt - T - 0.06) * 5) * 0.9 : 0;
+  look(c.v, mix3([10, 30, 600], [0, 22, 540], p), [8, -34, 0], 30);
+  c.v.render();
+  reveal(c.t, lt, 0.3, { stagger: 0.12 });
+  fadeIn(c.sb, lt, 1.0, 0.8, 16);
+}, { bg: '#05070b', fi: 0.3, fo: 0.35 });
+
+scene(37.2, 42.0, el => {
+  const net = h('div', 'net');
+  const rooms = [
+    [440, 480, '3ro B', 'Prof. Sánchez', 28],
+    [1480, 480, '2do A', 'Prof. Molina', 31],
+    [440, 900, '1ro C', 'Prof. Vera', 26],
+    [1480, 900, 'Laboratorio', 'Prof. Ruiz', 24]
+  ];
+  const HX = 960, HY = 690;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 1920 1080');
+  const paths = rooms.map(([x, y]) => {
+    const pa = document.createElementNS(ns, 'path');
+    const sx = x < HX ? x + 200 : x - 200;
+    const d = `M${sx} ${y} C ${(sx + HX) / 2} ${y}, ${(sx + HX) / 2} ${HY}, ${HX + (x < HX ? -115 : 115)} ${HY}`;
+    pa.setAttribute('d', d);
+    pa.setAttribute('fill', 'none');
+    pa.setAttribute('stroke', '#b9d6ff');
+    pa.setAttribute('stroke-width', '4');
+    pa.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(pa);
+    return pa;
+  });
+  net.appendChild(svg);
+  const cards = rooms.map(([x, y, n, who, ct]) => {
+    const r = h('div', 'room', `<div class="dev"></div><div class="cam"></div><div class="tx"><b>${n}</b><small>${who}</small></div><div class="ct">0</div>`);
+    css(r, { left: x + 'px', top: y + 'px' });
+    net.appendChild(r);
+    return { r, ct: r.querySelector('.ct'), total: ct };
+  });
+  const hub = h('div', 'hub', `<div class="ring"></div><div class="ic">${ICON}</div><div class="lb">Un solo servidor</div>`);
+  net.appendChild(hub);
+  const pks = [];
+  for (let i = 0; i < 16; i++) { const d = h('div', 'pk'); net.appendChild(d); pks.push(d); }
+  const t = title('Todo el colegio. *Una sola red.*', { size: 100, top: 92, cls: 'ink', hl: 'grad' });
+  const sb = sub('Cada docente ve solo sus cursos.', { top: 232, size: 44, cls: 'gray' });
+  el.append(net, t, sb);
+  return { paths, cards, hub, ring: hub.querySelector('.ring'), pks, t, sb, lens: paths.map(p => p.getTotalLength()) };
+}, (lt, s) => {
+  const c = s.ctx;
+  const lens = c.lens.map((L, i) => L || c.paths[i].getTotalLength());
+  c.lens = lens;
+  const hp = prog(lt, 0.2, 0.9, E.back);
+  c.hub.style.transform = `scale(${lerp(0.5, 1, hp)})`;
+  c.hub.style.opacity = prog(lt, 0.2, 0.45);
+  c.cards.forEach((k, i) => {
+    const t0 = 0.45 + i * 0.12;
+    const q = prog(lt, t0, t0 + 0.7, E.out5);
+    k.r.style.opacity = q;
+    k.r.style.transform = `translateY(${(1 - q) * 40}px) scale(${lerp(0.92, 1, q)})`;
+    k.r.style.filter = `blur(${(1 - q) * 10}px)`;
+    const L = lens[i];
+    const d = prog(lt, t0 + 0.3, t0 + 1.1, E.io);
+    c.paths[i].style.strokeDasharray = `${L} ${L}`;
+    c.paths[i].style.strokeDashoffset = `${L * (1 - d)}`;
+  });
+  let pulse = 0;
+  c.pks.forEach((pk, j) => {
+    const i = j % 4;
+    const start = 1.55 + Math.floor(j / 4) * 0.62 + i * 0.15;
+    const q = clamp((lt - start) / 0.75);
+    if (q <= 0 || q >= 1) { pk.style.opacity = 0; if (q >= 1) pulse = Math.max(pulse, Math.exp(-(lt - start - 0.75) * 4)); return; }
+    const e = E.io(q);
+    const pt = c.paths[i].getPointAtLength(lens[i] * e);
+    pk.style.opacity = Math.min(1, q * 6, (1 - q) * 6);
+    pk.style.left = pt.x + 'px';
+    pk.style.top = pt.y + 'px';
+  });
+  c.ring.style.opacity = pulse * 0.9;
+  c.ring.style.transform = `scale(${1 + (1 - pulse) * 0.18})`;
+  c.cards.forEach((k, i) => {
+    const q = prog(lt, 1.5 + i * 0.1, 4.2, E.out);
+    k.ct.textContent = Math.round(k.total * q);
+  });
+  reveal(c.t, lt, 0.2, { stagger: 0.09 });
+  fadeIn(c.sb, lt, 0.9, 0.7, 16);
+}, { bg: '#f5f5f7', fi: 0.3, fo: 0.3 });
+
+scene(66.6, 71.05, el => {
+  const glow = h('div', 'full');
+  glow.style.background = 'radial-gradient(45% 55% at 70% 55%, rgba(0,201,111,0.20), rgba(255,255,255,0) 70%)';
+  const ph = phone(['ph_tour1', 'ph_tour2', 'ph_tour3']);
+  css(ph, { left: '1180px', top: '100px' });
+  const bot = h('div', 'botfloat', NaviBots.svg('capsule', 'happy'));
+  css(bot, { left: '160px', top: '250px' });
+  const t = title('Tu bot te enseña.', { size: 108, top: 430, cls: 'ink' });
+  const t2 = title('*En un minuto.*', { size: 108, top: 548, cls: 'ink', hl: 'grad' });
+  const sb = sub('Cada cuenta nueva empieza con un recorrido guiado.', { top: 700, size: 38, cls: 'gray' });
+  [t, t2, sb].forEach(x => css(x, { textAlign: 'left', left: '160px', right: 'auto' }));
+  el.append(glow, ph, bot, t, t2, sb);
+  return { ph, bot, t, t2, sb };
+}, (lt, s) => {
+  const c = s.ctx;
+  const up = prog(lt, 0, 1.0, E.out5);
+  c.ph.style.transform = `translateY(${lerp(220, 0, up)}px) rotate(${lerp(4, 0, up)}deg)`;
+  const a = prog(lt, 1.7, 2.05, E.io);
+  const b = prog(lt, 3.0, 3.35, E.io);
+  c.ph.layers[0].style.opacity = 1 - a;
+  c.ph.layers[1].style.opacity = a * (1 - b);
+  c.ph.layers[2].style.opacity = b;
+  const bp = prog(lt, 0.25, 0.95, E.back);
+  const hop = lt > 1 ? Math.abs(Math.sin((lt - 1) * 3.2)) * 10 : 0;
+  c.bot.style.opacity = prog(lt, 0.25, 0.5);
+  c.bot.style.transform = `translateY(${(1 - bp) * 40 - hop}px) scale(${lerp(0.5, 1, bp)})`;
+  reveal(c.t, lt, 0.45);
+  reveal(c.t2, lt, 0.8);
+  fadeIn(c.sb, lt, 1.3, 0.7, 16);
+}, { bg: '#f5f5f7', fi: 0.3, fo: 0.3 });
+
+const DURATION = 79.5;
 function render(t) {
   for (const s of S) {
     const on = t >= s.start && t <= s.end;

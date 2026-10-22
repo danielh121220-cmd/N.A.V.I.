@@ -1,1 +1,1 @@
-window.META={"ph_portal": "#f2f2f7", "ph_egg": "#f2f2f7", "ph_born": "#f2f2f7", "ph_sick": "#f2f2f7", "ph_gone": "#f2f2f7", "ph_ficha": "#ff3b30", "ph_code": "#a4a4a7"};
+window.META={"ph_portal": "#f2f2f7", "ph_egg": "#f2f2f7", "ph_born": "#f2f2f7", "ph_sick": "#f2f2f7", "ph_gone": "#f2f2f7", "ph_ficha": "#ff3b30", "ph_code": "#a4a4a7", "ph_tour1": "#f2f2f7", "ph_tour2": "#f2f2f7", "ph_tour3": "#f2f2f7"};
