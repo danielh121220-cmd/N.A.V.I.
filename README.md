@@ -20,7 +20,7 @@ En la app de Android, escribe **12122008** en el campo del servidor y toca **Con
 
 Para instalarla como app en la PC o en el celular, lee [`docs/INSTALAR_APP.md`](docs/INSTALAR_APP.md).
 
-Para la competencia (KILLTRONIC 8.0, Impacto Tecnológico): informe técnico de 8 páginas en [`docs/INFORME_TECNICO_NAVI.docx`](docs/INFORME_TECNICO_NAVI.docx) y guía de exposición en [`docs/GUIA_DE_COMPETENCIA_PITCH.md`](docs/GUIA_DE_COMPETENCIA_PITCH.md).
+Para la competencia (KILLTRONIC 8.0, Impacto Tecnológico): informe técnico de 9 páginas en [`docs/INFORME_TECNICO_NAVI.docx`](docs/INFORME_TECNICO_NAVI.docx) y guía de exposición en [`docs/GUIA_DE_COMPETENCIA_PITCH.md`](docs/GUIA_DE_COMPETENCIA_PITCH.md).
 
 ## Qué hace
 
@@ -72,3 +72,8 @@ proyecto con pn532/
 - La base de datos está en `backend/data/navi.sqlite`. Ni ella, ni las fotos, ni `mis_datos.h` (tu WiFi) ni `servidor.h` (la clave de terminal) se suben a GitHub.
 - La clave de terminal se genera sola y aparece en la ventana del servidor y en **Lector → Configuración del firmware** (solo para el administrador). Es la misma en el modo real y en la demostración, así que el lector funciona con los dos.
 - El modo demostración también se activa con `NAVI_DEMO=1` en `backend/.env`.
+
+## Equipo
+
+- Daniel Heredia y Noelya Arreaga, Bachillerato Técnico en Mecatrónica, Colegio Fiscomisional Salesiano Domingo Comín (Guayaquil).
+- Docente tutor: Alejandro Sánchez.

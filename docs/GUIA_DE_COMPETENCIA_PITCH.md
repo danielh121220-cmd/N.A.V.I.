@@ -11,7 +11,7 @@
 | Equipo de 2 integrantes que conocen todo el proyecto (arts. 1.1 y 4.3) | Los dos deben poder explicar el circuito, el código y el servidor (reparto en la sección 7) |
 | Desarrollo propio, puede usar librerías si se explica el aporte (art. 2.2) | Librerías de Adafruit y Espressif; el firmware, el servidor, las apps y la carcasa son propios |
 | Proyecto terminado y funcional (art. 2.4) | Lector armado + servidor en la laptop + app en el celular |
-| Informe técnico de máximo 10 páginas con la estructura del Anexo 2 (art. 4.1) | `docs/INFORME_TECNICO_NAVI.docx` (8 páginas). Pásalo al formato oficial .doc del concurso y completa lo resaltado en amarillo |
+| Informe técnico de máximo 10 páginas con la estructura del Anexo 2 (art. 4.1) | `docs/INFORME_TECNICO_NAVI.docx` (9 páginas). Pásalo al formato oficial .doc del concurso y completa lo resaltado en amarillo: el tiempo del pase de lista y las fotos del prototipo |
 | Homologación: que coincida con el informe y sea seguro (art. 4.2) | Fuentes de 5 V, sin cables sueltos, carcasa cerrada |
 | Robótica o automatización como herramienta principal (art. 5.2) | Sensor (NFC) → controlador (ESP32 con dos núcleos) → actuadores (pantalla, LEDs, buzzer, cámara) y decisiones automáticas (ausentes, avisos, alertas) sin intervención humana |
 | 10 min de exposición y demostración + 5 min de preguntas (art. 5.3) | Guion de la sección 4 |
@@ -109,7 +109,7 @@ Reparto sugerido: problema (1 min 30 s), solución (2 min), demostración en viv
 
 ## 7. Reparto entre los dos integrantes
 
-| Integrante 1 | Integrante 2 |
+| Daniel Heredia | Noelya Arreaga |
 | --- | --- |
 | Problema, circuito, firmware en C++, red | Servidor, app, seguridad, ficha médica |
 | Pasos 1 a 4 de la demo | Pasos 5 a 7 de la demo |
