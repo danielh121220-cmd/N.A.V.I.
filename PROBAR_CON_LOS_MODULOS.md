@@ -88,7 +88,7 @@ El cable **GPIO 25 del lector → GPIO 13 de la cámara** (con GND común) es op
 3. Para subir:
    - **Con la placa base ESP32-CAM-MB** (la que trae USB): conéctala y sube. Si se queda en "Connecting…", mantén presionado **IO0** y toca **RST**.
    - **Con un adaptador FTDI**: une **GPIO 0 con GND**, presiona **RST**, sube, quita el puente y presiona **RST** otra vez.
-4. En el Monitor serie (115200) debe salir `Camara lista (con PSRAM, fotos VGA)`, `WiFi OK` y `Servidor conectado`.
+4. En el Monitor serie (115200) debe salir `Camara lista (con PSRAM, fotos VGA)`, `WiFi OK`, `Servidor conectado` y `Conexion de espera con el servidor lista`.
 5. Escribe **f** y presiona Enter: toma una foto de prueba y dice `Foto 18000 bytes -> HTTP 200`.
 6. En la app, **Lector → Hardware conectado** muestra la cámara **En línea**. Al acercar una tarjeta, la foto aparece en el registro del estudiante.
 
@@ -138,5 +138,6 @@ Si una red no deja que los equipos se vean entre sí (pasa en algunas redes de c
 | `Clave de terminal incorrecta` | Abre `INICIAR_NAVI.bat` en la PC y vuelve a subir el programa, para que tome el `servidor.h` nuevo. |
 | El lector no aparece **En línea** | La PC y el ESP32 no están en la misma red, o el Firewall de Windows bloquea Node.js: permite el acceso en redes privadas. |
 | En otro colegio el toque tarda o dice `SERVIDOR NO RESP.` | 1) Si `INICIAR_NAVI` avisa que la red es **Pública**, cámbiala a **Privada** en Windows. 2) Revisa que el servidor esté abierto: el lector lo busca solo y en el Monitor serie dice `Servidor encontrado en la red`. 3) Si la red no deja que los equipos se vean entre sí, usa un router propio o el hotspot de tu celular. En el Monitor serie cada toque dice `Servidor respondio en ... ms`: en una red normal son menos de 100 ms. |
+| La cámara sale **En línea** pero el registro dice `La cámara no envió foto` | Sube **camara-3.5** o más nueva: deja una conexión abierta con el servidor y recibe el pedido de foto por ahí, aunque la red no deje que la PC llegue a la cámara. Si sigue igual, mira el Monitor serie de la cámara: `Error al iniciar la camara` es el cable plano o la placa elegida, y `Foto ... -> HTTP -1` es que la foto no llegó al servidor. |
 | LED amarillo con `SIN RED` | El ESP32 guarda los toques y los envía cuando vuelve el WiFi. Revisa el nombre y la clave del WiFi. |
 | `USE TARJETA · NTAG213 O NTAG215` | Esa tarjeta no se puede grabar. Sirve para marcar, pero para la credencial usa NTAG213 o NTAG215. |

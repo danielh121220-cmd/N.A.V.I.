@@ -8,7 +8,7 @@
 #include <HTTPClient.h>
 #include <WebServer.h>
 
-#define FIRMWARE "camara-3.4"
+#define FIRMWARE "camara-3.5"
 #define DISCOVERY_PORT 41234
 #define PIN_FLASH 4
 
@@ -53,6 +53,7 @@ void ping();
 void captureAndSend();
 void startWeb();
 bool discoverServer();
+void waitTask(void *arg);
 
 void IRAM_ATTR onTrigger() {
   triggered = true;
@@ -195,7 +196,7 @@ void ping() {
   http.setTimeout(3000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Terminal-Key", TERMINAL_KEY);
-  int code = http.POST(String("{\"terminal_id\":\"") + TERMINAL_ID + "\",\"kind\":\"CAMARA\",\"firmware\":\"" + FIRMWARE + "\",\"rssi\":" + String(WiFi.RSSI()) + "}");
+  int code = http.POST(String("{\"terminal_id\":\"") + TERMINAL_ID + "\",\"kind\":\"CAMARA\",\"firmware\":\"" + FIRMWARE + "\",\"camara_ok\":" + (cameraOk ? "true" : "false") + ",\"ip\":\"" + WiFi.localIP().toString() + "\",\"rssi\":" + String(WiFi.RSSI()) + "}");
   pingFails = code > 0 ? 0 : pingFails + 1;
   if (code != lastPingCode) {
     if (code == 200) Serial.println("Servidor conectado. En la app: Lector -> Hardware conectado -> camara En linea");
@@ -227,9 +228,46 @@ void captureAndSend() {
   http.addHeader("X-Terminal-Key", TERMINAL_KEY);
   http.addHeader("X-Terminal-Id", TERMINAL_ID);
   int code = http.POST(fb->buf, fb->len);
-  Serial.printf("Foto %u bytes -> HTTP %d\n", fb->len, code);
+  if (code < 0) {
+    http.end();
+    http.begin(baseUrl() + "/api/camera/snapshot");
+    http.setTimeout(5000);
+    http.addHeader("Content-Type", "image/jpeg");
+    http.addHeader("X-Terminal-Key", TERMINAL_KEY);
+    http.addHeader("X-Terminal-Id", TERMINAL_ID);
+    code = http.POST(fb->buf, fb->len);
+  }
+  Serial.printf("Foto %u bytes -> HTTP %d%s\n", fb->len, code, code == 200 ? "" : code < 0 ? " (no llego al servidor)" : "");
   http.end();
   esp_camera_fb_return(fb);
+}
+
+void waitTask(void *arg) {
+  bool told = false;
+  for (;;) {
+    if (WiFi.status() != WL_CONNECTED || !cameraOk) {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      continue;
+    }
+    HTTPClient http;
+    http.begin(baseUrl() + "/api/camera/wait?terminal_id=" + TERMINAL_ID + "&fw=" + FIRMWARE + "&ip=" + WiFi.localIP().toString() + "&rssi=" + String(WiFi.RSSI()));
+    http.setConnectTimeout(3000);
+    http.setTimeout(26000);
+    http.addHeader("X-Terminal-Key", TERMINAL_KEY);
+    int code = http.GET();
+    http.end();
+    if (code == 200 || code == 204) {
+      if (code == 200) triggered = true;
+      if (!told) {
+        told = true;
+        Serial.println("Conexion de espera con el servidor lista: la foto se pide al instante en cada toque");
+      }
+    } else if (code == 404) {
+      vTaskDelay(pdMS_TO_TICKS(60000));
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(code == 401 ? 10000 : 2000));
+    }
+  }
 }
 
 void startWeb() {
@@ -281,6 +319,7 @@ void setup() {
   } else {
     Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en mis_datos.h. Solo redes de 2.4 GHz.");
   }
+  xTaskCreatePinnedToCore(waitTask, "navi-espera", 8192, nullptr, 1, nullptr, 0);
   Serial.println("Para probar sin el lector, escribe f en el Monitor serie y presiona Enter: toma una foto.");
 }
 

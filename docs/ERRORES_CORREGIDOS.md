@@ -186,3 +186,9 @@
 | Problema | Corrección |
 | --- | --- |
 | Con la carpeta nueva el lector no encontraba el PN532, aunque con la anterior sí. | El PN532 estaba cableado por UART, pero el `mis_datos.h` nuevo que crea el servidor venía con `PN532_UART 0` (I2C). Ahora (lector-3.8) el lector prueba UART e I2C al encender, usa el que responda y lo recuerda para el siguiente arranque. Ya no depende de `PN532_UART`. |
+
+## Ronda 15 (foto de la cámara en cualquier red)
+
+| Problema | Corrección |
+| --- | --- |
+| La cámara salía En línea, pero ningún registro tenía foto ("La cámara no envió foto de este registro"). | El servidor pedía la foto llamando a la IP desde la que veía llegar a la cámara. En algunas redes (repetidores, hotspot de Windows o programas que redirigen conexiones) esa IP era la de la misma PC, así que el pedido nunca llegaba. Ahora (camara-3.5) la cámara deja abierta una conexión con el servidor y el servidor le responde "toma la foto" en el mismo instante del toque (unos milisegundos). Si un toque cae justo mientras la cámara se reconecta, la foto se toma al volver. La cámara también informa su propia IP. Las cámaras con camara-3.4 siguen funcionando como antes. |

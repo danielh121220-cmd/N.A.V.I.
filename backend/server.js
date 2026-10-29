@@ -802,7 +802,18 @@ app.post('/api/attendance/scan', auth.requireTerminalOrUser, wrap((req, res) => 
   }
 }));
 
+const camWaiters = new Map();
+const camPending = new Map();
+
 function askCamera(terminalId) {
+  const waiter = camWaiters.get(terminalId);
+  if (waiter) {
+    camWaiters.delete(terminalId);
+    clearTimeout(waiter.timer);
+    if (!waiter.res.writableEnded) waiter.res.json({ foto: true });
+    return;
+  }
+  camPending.set(terminalId, Date.now());
   const cam = db.q('SELECT ip, last_seen FROM terminals WHERE id = ?').get(`${terminalId}#CAM`);
   if (!cam || !cam.ip || Date.now() - Date.parse(cam.last_seen) > 120000 || typeof fetch !== 'function') return;
   const ip = /^[0-9a-f.:]+$/i.test(cam.ip) ? cam.ip : null;
@@ -902,11 +913,14 @@ app.get('/api/notifications', auth.requireUser, (req, res) => {
 });
 
 const terminalSeen = new Map();
+const reportedIp = new Map();
 function touchTerminal(id, kind, req, b = {}) {
   const key = kind === 'CAMARA' ? `${id}#CAM` : id;
   const seen = terminalSeen.get(key);
   const now = Date.now();
-  const ip = (req.socket.remoteAddress || '').replace('::ffff:', '');
+  const own = typeof b.ip === 'string' && /^\d{1,3}(\.\d{1,3}){3}$/.test(b.ip) && b.ip !== '0.0.0.0' ? b.ip : null;
+  if (own) reportedIp.set(key, own);
+  const ip = own || reportedIp.get(key) || (req.socket.remoteAddress || '').replace('::ffff:', '');
   db.q(`INSERT INTO terminals (id, kind, ip, firmware, rssi, last_seen) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET ip = excluded.ip, firmware = COALESCE(excluded.firmware, firmware), rssi = COALESCE(excluded.rssi, rssi), last_seen = excluded.last_seen, kind = excluded.kind`)
     .run(key, kind, ip, b.firmware || null, b.rssi != null ? Number(b.rssi) : null, new Date(now).toISOString());
@@ -923,6 +937,31 @@ app.post('/api/terminal/ping', wrap((req, res) => {
   touchTerminal(String(b.terminal_id || 'ESP32-AULA-1').slice(0, 40), kind, req, b);
   res.json({ ok: true, server_time: Math.floor(Date.now() / 1000) });
 }));
+
+app.get('/api/camera/wait', (req, res) => {
+  if (!auth.isTerminal(req)) return res.status(401).json({ error: 'Clave de terminal incorrecta' });
+  const terminalId = String(req.query.terminal_id || 'ESP32-AULA-1').slice(0, 40);
+  const ip = String(req.query.ip || '');
+  touchTerminal(terminalId, 'CAMARA', req, { firmware: req.query.fw ? String(req.query.fw).slice(0, 30) : null, ip, rssi: req.query.rssi != null && req.query.rssi !== '' ? Number(req.query.rssi) || null : null });
+  const pending = camPending.get(terminalId);
+  camPending.delete(terminalId);
+  if (pending && Date.now() - pending < 4000) return res.json({ foto: true });
+  const old = camWaiters.get(terminalId);
+  if (old) {
+    clearTimeout(old.timer);
+    if (!old.res.writableEnded) old.res.status(204).end();
+  }
+  const waiter = { res, timer: null };
+  waiter.timer = setTimeout(() => {
+    if (camWaiters.get(terminalId) === waiter) camWaiters.delete(terminalId);
+    if (!res.writableEnded) res.status(204).end();
+  }, 20000);
+  camWaiters.set(terminalId, waiter);
+  res.on('close', () => {
+    clearTimeout(waiter.timer);
+    if (camWaiters.get(terminalId) === waiter) camWaiters.delete(terminalId);
+  });
+});
 
 app.get('/api/terminals', auth.requireUser, (req, res) => {
   const rows = db.q('SELECT t.*, c.name AS course_name, c.code AS course_code FROM terminals t LEFT JOIN courses c ON c.id = t.course_id ORDER BY t.id').all();

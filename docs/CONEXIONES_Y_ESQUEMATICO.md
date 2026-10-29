@@ -61,7 +61,7 @@ La pantalla OLED sigue en GPIO 21 y 22.
 
 ## 3. Cámara: ESP32-CAM
 
-Desde camara-3.2 la cámara funciona **solo con WiFi**: en cada toque el servidor le pide la foto. El cable de disparo de abajo es opcional (la foto sale unos milisegundos antes). Lo único obligatorio es su fuente de 5 V.
+Desde camara-3.2 la cámara funciona **solo con WiFi**: en cada toque el servidor le pide la foto. Desde camara-3.5 la cámara deja abierta una conexión con el servidor y recibe el pedido por ahí, así funciona en cualquier red. El cable de disparo de abajo es opcional (la foto sale unos milisegundos antes). Lo único obligatorio es su fuente de 5 V.
 
 | Desde | Hacia | Notas |
 | --- | --- | --- |
