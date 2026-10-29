@@ -16,7 +16,7 @@
 Adafruit_VL53L0X lox;
 #endif
 
-#define FIRMWARE "lector-3.7"
+#define FIRMWARE "lector-3.8"
 #define DISCOVERY_PORT 41234
 #define QUEUE_FILE "/cola.csv"
 
@@ -30,11 +30,10 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 #ifndef PIN_PN532_TX
 #define PIN_PN532_TX 17
 #endif
-#if PN532_UART
-Adafruit_PN532 nfc(PIN_PN532_RESET, &Serial2);
-#else
-Adafruit_PN532 nfc(PIN_PN532_IRQ, PIN_PN532_RESET, &Wire);
-#endif
+Adafruit_PN532 nfcSer(PIN_PN532_RESET, &Serial2);
+Adafruit_PN532 nfcI2c(PIN_PN532_IRQ, PIN_PN532_RESET, &Wire);
+bool nfcUart = PN532_UART;
+Adafruit_PN532 *nfc = PN532_UART ? &nfcSer : &nfcI2c;
 
 bool oledOk = false;
 bool nfcOk = false;
@@ -339,7 +338,7 @@ String writeNdef(const char *hex) {
     uint8_t page = 4 + i / 4;
     if (page > 39) return "MUY GRANDE";
     nfcFlush();
-    if (!nfc.ntag2xx_WritePage(page, data + i)) return "SE MOVIO";
+    if (!nfc->ntag2xx_WritePage(page, data + i)) return "SE MOVIO";
   }
   return "";
 }
@@ -457,7 +456,7 @@ String readCredential(uint8_t uidLen) {
   uint16_t n = 0;
   for (uint8_t p = 4; p < 40 && n + 4 <= sizeof(mem); p++) {
     nfcFlush();
-    if (!nfc.ntag2xx_ReadPage(p, page)) break;
+    if (!nfc->ntag2xx_ReadPage(p, page)) break;
     memcpy(mem + n, page, 4);
     n += 4;
     if (ndefComplete(mem, n)) break;
@@ -903,46 +902,57 @@ void scanI2C() {
     }
   }
   Serial.println("Modulos I2C encontrados:" + (found.length() ? found : String(" ninguno")));
-  if (!PN532_UART && !nfcOk && found.indexOf("0x24") < 0) Serial.println("El PN532 no responde en I2C (0x24): switch 1 en ON, switch 2 en OFF, cables SDA y SCL, y desconecta y conecta el USB");
+  if (!nfcUart && !nfcOk && found.indexOf("0x24") < 0) Serial.println("El PN532 no responde en I2C (0x24): switch 1 en ON, switch 2 en OFF, cables SDA y SCL, y desconecta y conecta el USB");
 }
 
 void nfcFlush() {
-#if PN532_UART
+  if (!nfcUart) return;
   delay(2);
   while (Serial2.available()) Serial2.read();
-#endif
 }
 
 bool nfcAlive() {
   for (int i = 0; i < 4; i++) {
     delay(i ? 250 : 120);
     nfcFlush();
-    if (nfc.getFirmwareVersion()) return true;
+    if (nfc->getFirmwareVersion()) return true;
   }
   return false;
 }
 
-bool startNfc() {
-#if PN532_UART
-  Serial2.begin(115200, SERIAL_8N1, PIN_PN532_RX, PIN_PN532_TX);
-#endif
-  nfc.begin();
-#if PN532_UART
-  Serial2.setTimeout(80);
-#endif
+uint32_t tryNfc(bool uart) {
+  nfcUart = uart;
+  nfc = uart ? &nfcSer : &nfcI2c;
+  if (uart) Serial2.begin(115200, SERIAL_8N1, PIN_PN532_RX, PIN_PN532_TX);
+  nfc->begin();
+  if (uart) Serial2.setTimeout(80);
   uint32_t v = 0;
   for (int i = 0; i < 3 && !v; i++) {
     delay(100);
     nfcFlush();
-    v = nfc.getFirmwareVersion();
+    v = nfc->getFirmwareVersion();
   }
+  return v;
+}
+
+bool startNfc() {
+  Preferences np;
+  np.begin("navi-nfc", false);
+  bool first = np.getBool("uart", PN532_UART);
+  uint32_t v = tryNfc(first);
+  if (!v) v = tryNfc(!first);
   nfcOk = v != 0;
   if (nfcOk) {
+    if (nfcUart != first) np.putBool("uart", nfcUart);
     nfcFlush();
-    nfc.SAMConfig();
-    nfc.setPassiveActivationRetries(PN532_UART ? 0x02 : 0x10);
-    Serial.printf("PN532 v%d.%d listo\n", (v >> 16) & 0xFF, (v >> 8) & 0xFF);
+    nfc->SAMConfig();
+    nfc->setPassiveActivationRetries(nfcUart ? 0x02 : 0x10);
+    Serial.printf("PN532 v%d.%d listo por %s\n", (v >> 16) & 0xFF, (v >> 8) & 0xFF, nfcUart ? "UART (GPIO 16 y 17)" : "I2C (GPIO 21 y 22)");
+  } else {
+    nfcUart = first;
+    nfc = first ? &nfcSer : &nfcI2c;
   }
+  np.end();
   return nfcOk;
 }
 
@@ -970,11 +980,7 @@ void setup() {
   startNfc();
   scanI2C();
   if (!nfcOk) {
-#if PN532_UART
-    Serial.println("PN532 no detectado (modo UART): switch 1 y 2 en OFF, pin SDA/TXD del PN532 al GPIO 16, pin SCL/RXD al GPIO 17. Luego desconecta y conecta el USB.");
-#else
-    Serial.println("PN532 no detectado (modo I2C): switch 1 en ON y switch 2 en OFF, SDA al GPIO 21, SCL al GPIO 22. Si no aparece, prueba el modo UART: PN532_UART 1 en mis_datos.h.");
-#endif
+    Serial.println("PN532 no detectado ni por UART ni por I2C. UART: switches 1 y 2 en OFF, TXD del PN532 al GPIO 16 y RXD al GPIO 17. I2C: switch 1 en ON y 2 en OFF, SDA al GPIO 21 y SCL al GPIO 22. Revisa VCC a 5V y GND, y desconecta y conecta el USB.");
   }
 #if USE_PRESENCE_SENSOR
   if (lox.begin()) {
@@ -1065,7 +1071,7 @@ void loop() {
   uint8_t uid[7];
   uint8_t len = 0;
   nfcFlush();
-  if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, PN532_UART ? 150 : 60)) {
+  if (nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, nfcUart ? 150 : 60)) {
     String hex = "";
     for (uint8_t i = 0; i < len; i++) {
       if (uid[i] < 0x10) hex += "0";

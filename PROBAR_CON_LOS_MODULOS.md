@@ -133,8 +133,7 @@ Si una red no deja que los equipos se vean entre sí (pasa en algunas redes de c
 | Mensaje o síntoma | Qué hacer |
 | --- | --- |
 | `Sketch too big` o `text section exceeds available space` | **Herramientas → Partition Scheme → Huge APP (3MB No OTA/1MB SPIFFS)** y vuelve a subir. |
-| `PN532 no detectado` | Pon el switch 1 en ON y el switch 2 en OFF (modo I2C) y revisa SDA y SCL. Desconecta y vuelve a conectar la alimentación. |
-| Sigue `PN532 no detectado` y `Modulos I2C encontrados: ninguno` | Usa el **modo UART**: switches 1 y 2 en OFF, el pin SDA/TXD del PN532 al GPIO 16, el pin SCL/RXD al GPIO 17, y en `mis_datos.h` pon `#define PN532_UART 1`. |
+| `PN532 no detectado ni por UART ni por I2C` | El lector prueba los dos modos solo. Revisa los switches (UART: 1 y 2 en OFF, TXD al GPIO 16 y RXD al GPIO 17; I2C: 1 en ON y 2 en OFF, SDA al GPIO 21 y SCL al GPIO 22), VCC a 5V y GND. Desconecta y vuelve a conectar la alimentación: el PN532 solo lee los switches al encender. |
 | La OLED no enciende | Revisa que esté en 3.3V y no en 5V. Su dirección debe ser 0x3C. |
 | `Clave de terminal incorrecta` | Abre `INICIAR_NAVI.bat` en la PC y vuelve a subir el programa, para que tome el `servidor.h` nuevo. |
 | El lector no aparece **En línea** | La PC y el ESP32 no están en la misma red, o el Firewall de Windows bloquea Node.js: permite el acceso en redes privadas. |

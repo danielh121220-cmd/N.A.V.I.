@@ -15,7 +15,7 @@ Versión vectorial para imprimir: `conexiones.svg`.
 | 1 | **ON** (arriba, hacia la palabra ON) |
 | 2 | **OFF** |
 
-Así queda en modo I2C. Con 1 OFF y 2 ON queda en SPI, y con los dos en OFF queda en UART: en esos modos el ESP32 no lo encuentra. Cambia los switches con el módulo apagado.
+Así queda en modo I2C. Con los dos en OFF queda en UART (sección "Plan B"). Con 1 OFF y 2 ON queda en SPI, que el lector no usa. Cambia los switches con el módulo apagado. Desde lector-3.8 el lector detecta solo si el PN532 está en I2C o en UART, y el Monitor serie dice cuál encontró: `PN532 v1.6 listo por UART`.
 
 ## 2. Lector: ESP32 + PN532 + OLED + LEDs + buzzer
 
@@ -55,7 +55,7 @@ Si el Monitor serie dice `PN532 no detectado` aunque los switches y los cables e
 | Pin SDA/TXD del PN532 | **GPIO 16** (RX2) |
 | Pin SCL/RXD del PN532 | **GPIO 17** (TX2) |
 | VCC y GND | Igual que antes |
-| `mis_datos.h` | Cambia `#define PN532_UART 0` a `#define PN532_UART 1` y vuelve a subir el programa |
+| `mis_datos.h` | No hace falta cambiar nada: desde lector-3.8 el lector prueba UART e I2C al encender y usa el que responda |
 
 La pantalla OLED sigue en GPIO 21 y 22.
 

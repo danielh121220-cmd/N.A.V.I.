@@ -181,3 +181,8 @@
 | El lector solo conocía una red WiFi. | Se pueden guardar hasta tres redes en `mis_datos.h`; se conecta a la que encuentre con mejor señal y cambia sola si una se cae. La reconexión corre aparte y no frena la lectura de tarjetas. |
 | En el celular había que escribir la IP del servidor. | La app de Android (3.12) tiene **Buscar en esta red** y busca sola cuando no puede conectarse. |
 
+## Ronda 14 (PN532 por UART)
+
+| Problema | Corrección |
+| --- | --- |
+| Con la carpeta nueva el lector no encontraba el PN532, aunque con la anterior sí. | El PN532 estaba cableado por UART, pero el `mis_datos.h` nuevo que crea el servidor venía con `PN532_UART 0` (I2C). Ahora (lector-3.8) el lector prueba UART e I2C al encender, usa el que responda y lo recuerda para el siguiente arranque. Ya no depende de `PN532_UART`. |
