@@ -8,7 +8,7 @@
 #include <HTTPClient.h>
 #include <WebServer.h>
 
-#define FIRMWARE "camara-3.5"
+#define FIRMWARE "camara-3.6"
 #define DISCOVERY_PORT 41234
 #define PIN_FLASH 4
 
@@ -40,6 +40,7 @@ WebServer web(80);
 int lastPingCode = 0;
 int pingFails = 0;
 unsigned long lastDiscoverAt = 0;
+volatile bool needFind = false;
 WiFiMulti wifiMulti;
 Preferences prefs;
 char serverHost[48] = SERVER_HOST;
@@ -49,7 +50,8 @@ void IRAM_ATTR onTrigger();
 String baseUrl();
 bool initCamera();
 void ensureWifi();
-void ping();
+int ping();
+bool findServer();
 void captureAndSend();
 void startWeb();
 bool discoverServer();
@@ -112,7 +114,10 @@ bool discoverServer() {
         if (pi < 0 || po < 0) continue;
         String p = r.substring(pi + 9, r.indexOf('"', pi + 9));
         uint16_t port = r.substring(po + 7).toInt();
-        if (!proof.length() || proof != p || !port) continue;
+        if (!proof.length() || proof != p || !port) {
+          Serial.println("Respondio un servidor con otra clave de terminal: vuelve a subir el programa con el servidor.h nuevo");
+          continue;
+        }
         String ip = udp.remoteIP().toString();
         udp.stop();
         strncpy(serverHost, ip.c_str(), sizeof(serverHost) - 1);
@@ -128,6 +133,7 @@ bool discoverServer() {
     }
   }
   udp.stop();
+  Serial.println("Nadie respondio la busqueda en la red");
   return false;
 }
 
@@ -189,10 +195,11 @@ void ensureWifi() {
   if (wifiMulti.run(6000) == WL_CONNECTED) WiFi.setSleep(false);
 }
 
-void ping() {
-  if (WiFi.status() != WL_CONNECTED) return;
+int ping() {
+  if (WiFi.status() != WL_CONNECTED) return -1;
   HTTPClient http;
   http.begin(baseUrl() + "/api/terminal/ping");
+  http.setConnectTimeout(2500);
   http.setTimeout(3000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Terminal-Key", TERMINAL_KEY);
@@ -205,6 +212,46 @@ void ping() {
   }
   if (code == 401) Serial.println("Clave de terminal incorrecta: abre INICIAR_NAVI en la PC y vuelve a subir el programa");
   http.end();
+  return code;
+}
+
+bool useHost(const String &host, uint16_t port) {
+  if (!host.length() || host.length() >= sizeof(serverHost)) return false;
+  strncpy(serverHost, host.c_str(), sizeof(serverHost) - 1);
+  serverHost[sizeof(serverHost) - 1] = 0;
+  serverPort = port;
+  Serial.println("Probando el servidor " + baseUrl() + "...");
+  if (ping() != 200) return false;
+  prefs.putString("fwhost", SERVER_HOST);
+  prefs.putString("host", host);
+  prefs.putUShort("port", port);
+  Serial.println("Servidor encontrado: " + baseUrl());
+  return true;
+}
+
+bool findServer() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  String current = serverHost;
+  uint16_t currentPort = serverPort;
+  Serial.println("Buscando el servidor en la red...");
+  if (discoverServer() && ping() == 200) return true;
+  String tried = "," + current + ",";
+  String list = String(SERVER_HOSTS) + "," + WiFi.gatewayIP().toString();
+  int from = 0;
+  while (from <= (int)list.length()) {
+    int comma = list.indexOf(',', from);
+    if (comma < 0) comma = list.length();
+    String h = list.substring(from, comma);
+    h.trim();
+    from = comma + 1;
+    if (!h.length() || tried.indexOf("," + h + ",") >= 0) continue;
+    tried += h + ",";
+    if (useHost(h, SERVER_PORT)) return true;
+  }
+  strncpy(serverHost, current.c_str(), sizeof(serverHost) - 1);
+  serverPort = currentPort;
+  Serial.println("No encontre el servidor: revisa que INICIAR_NAVI este abierto y que la camara este en la misma red que la PC");
+  return false;
 }
 
 void captureAndSend() {
@@ -244,6 +291,7 @@ void captureAndSend() {
 
 void waitTask(void *arg) {
   bool told = false;
+  int fails = 0;
   for (;;) {
     if (WiFi.status() != WL_CONNECTED || !cameraOk) {
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -257,6 +305,7 @@ void waitTask(void *arg) {
     int code = http.GET();
     http.end();
     if (code == 200 || code == 204) {
+      fails = 0;
       if (code == 200) triggered = true;
       if (!told) {
         told = true;
@@ -265,6 +314,12 @@ void waitTask(void *arg) {
     } else if (code == 404) {
       vTaskDelay(pdMS_TO_TICKS(60000));
     } else {
+      if (told) Serial.printf("La conexion de espera se corto (HTTP %d)\n", code);
+      told = false;
+      if (++fails >= 2) {
+        fails = 0;
+        needFind = true;
+      }
       vTaskDelay(pdMS_TO_TICKS(code == 401 ? 10000 : 2000));
     }
   }
@@ -314,7 +369,7 @@ void setup() {
     Serial.println(WiFi.localIP());
     Serial.println("Servidor: " + baseUrl());
     startWeb();
-    ping();
+    if (ping() != 200) findServer();
     lastPing = millis();
   } else {
     Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en mis_datos.h. Solo redes de 2.4 GHz.");
@@ -344,13 +399,11 @@ void loop() {
   if (millis() - lastPing > (lastPingCode == 200 ? 30000UL : 10000UL)) {
     lastPing = millis();
     ping();
-    if (pingFails >= 2 && WiFi.status() == WL_CONNECTED && millis() - lastDiscoverAt > 8000) {
-      lastDiscoverAt = millis();
-      if (discoverServer()) {
-        pingFails = 0;
-        ping();
-      }
-    }
+  }
+  if ((needFind || pingFails >= 1) && WiFi.status() == WL_CONNECTED && millis() - lastDiscoverAt > 8000) {
+    lastDiscoverAt = millis();
+    needFind = false;
+    if (findServer()) pingFails = 0;
   }
   delay(2);
 }

@@ -1102,10 +1102,11 @@ function lanAddresses() {
   return out.sort((a, b) => rank(a) - rank(b)).map(x => x.address);
 }
 
-function writeFirmwareConfig(host) {
+function writeFirmwareConfig(ips) {
   const fw = path.join(config.ROOT, '..', 'firmware');
+  const host = ips[0];
   if (!host || !fs.existsSync(fw)) return [];
-  const body = `#pragma once\n\n#define SERVER_HOST "${host}"\n#define SERVER_PORT ${config.port}\n#define TERMINAL_KEY "${config.terminalKey}"\n`;
+  const body = `#pragma once\n\n#define SERVER_HOST "${host}"\n#define SERVER_HOSTS "${ips.slice(0, 4).join(',')}"\n#define SERVER_PORT ${config.port}\n#define TERMINAL_KEY "${config.terminalKey}"\n`;
   const done = [];
   for (const d of ['navi_esp32_pn532', 'navi_esp32_cam']) {
     const dir = path.join(fw, d);
@@ -1154,7 +1155,7 @@ if (require.main === module) {
     for (const ip of ips) console.log(`  En tu red WiFi:  http://${ip}:${config.port}`);
     console.log('');
     console.log(`  Clave de terminal para el firmware: ${config.terminalKey}`);
-    const fw = writeFirmwareConfig(ips[0]);
+    const fw = writeFirmwareConfig(ips);
     if (fw.length) console.log(`  Firmware listo: la IP ${ips[0]} y la clave ya están en firmware/${fw.join('/servidor.h y firmware/')}/servidor.h`);
     if (fw.length) console.log('  Tu WiFi y el nombre de cada lector van en mis_datos.h, junto a servidor.h (no se suben a GitHub).');
     console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : (config.demoMode ? 'no configurado (se simula)' : 'no configurado')} · Telegram: ${config.telegram.token ? 'configurando...' : 'no configurado'}`);

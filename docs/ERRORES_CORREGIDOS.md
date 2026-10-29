@@ -192,3 +192,9 @@
 | Problema | Corrección |
 | --- | --- |
 | La cámara salía En línea, pero ningún registro tenía foto ("La cámara no envió foto de este registro"). | El servidor pedía la foto llamando a la IP desde la que veía llegar a la cámara. En algunas redes (repetidores, hotspot de Windows o programas que redirigen conexiones) esa IP era la de la misma PC, así que el pedido nunca llegaba. Ahora (camara-3.5) la cámara deja abierta una conexión con el servidor y el servidor le responde "toma la foto" en el mismo instante del toque (unos milisegundos). Si un toque cae justo mientras la cámara se reconecta, la foto se toma al volver. La cámara también informa su propia IP. Las cámaras con camara-3.4 siguen funcionando como antes. |
+
+## Ronda 16 (hotspot de Windows)
+
+| Problema | Corrección |
+| --- | --- |
+| Con el hotspot de Windows (la PC comparte su internet), la cámara decía `No llego al servidor` y nunca enviaba fotos. El lector sí funcionaba. | La PC tiene dos direcciones: la del WiFi (192.168.0.x) y la del hotspot (192.168.137.1). `servidor.h` solo traía la primera, que desde el hotspot no responde bien, y la búsqueda automática de la cámara fallaba sin avisar. Ahora el servidor escribe todas sus direcciones en `servidor.h` (`SERVER_HOSTS`), y la cámara (camara-3.6) prueba la búsqueda en la red, cada dirección y la puerta de enlace, guarda la que responde y explica en el Monitor serie qué está probando. |
