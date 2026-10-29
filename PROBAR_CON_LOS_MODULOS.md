@@ -35,7 +35,7 @@ La explicación completa, con fotos de qué revisar, está en [`docs/CONEXIONES_
 
    Ese archivo `servidor.h` tiene la IP de tu PC, el puerto y la clave de terminal. No lo subas a GitHub: ya está excluido.
 
-Si la IP de tu PC cambia (otro WiFi, otro día), vuelve a abrir `INICIAR_NAVI.bat` y vuelve a subir el programa al ESP32.
+Si la IP de tu PC cambia (otro WiFi, otro día), no hace falta volver a programar: el lector y la cámara buscan el servidor solos en la red.
 
 ## 3. Prepara Arduino IDE (una sola vez)
 
@@ -103,6 +103,31 @@ El cable **GPIO 25 del lector → GPIO 13 de la cámara** (con GND común) es op
 | En la ficha del estudiante: **Tarjeta y acceso → Grabar con el lector del aula** | Deja la tarjeta quieta hasta oír dos bips: queda grabada con su credencial firmada |
 | Acerca la misma tarjeta otra vez | Dice `YA MARCO` con la hora del primer toque |
 
+## 7. En cualquier red: WiFi del colegio o hotspot del celular
+
+N.A.V.I funciona **sin internet**: la PC, el lector, la cámara y los celulares solo necesitan estar en la misma red. El internet solo se usa para enviar correos.
+
+**Guarda hasta tres redes** en `mis_datos.h` (por ejemplo la de tu casa, la del colegio y el hotspot de tu celular). El lector y la cámara se conectan a la que encuentren con mejor señal:
+
+```
+#define WIFI_SSID_2 "HOTSPOT_DANIEL"
+#define WIFI_PASS_2 "CLAVE_DEL_HOTSPOT"
+```
+
+**Ya no hace falta volver a programar al cambiar de red.** Si la PC tiene otra IP, el lector y la cámara buscan el servidor solos en la red (tarda unos segundos), comprueban que tenga la misma clave de terminal y lo recuerdan. En el Monitor serie aparece `Servidor encontrado en la red`.
+
+**En el celular**, la app tiene el botón **Buscar en esta red**: encuentra la PC sin escribir la IP.
+
+**Con el hotspot de un celular:**
+
+1. Pon el hotspot en **2.4 GHz** (el ESP32 no ve redes de 5 GHz). En Android: *Banda del punto de acceso → 2.4 GHz*. En iPhone: activa *Maximizar compatibilidad*.
+2. Conecta la PC, el lector y la cámara a ese hotspot. El celular que comparte la red también puede abrir la app.
+3. Abre `INICIAR_NAVI.bat`. Si Windows pregunta por el tipo de red, elige **Privada**.
+
+También sirve la *Zona con cobertura inalámbrica móvil* de Windows (la PC comparte su red): ponla en 2.4 GHz y conecta el lector a ella.
+
+Si una red no deja que los equipos se vean entre sí (pasa en algunas redes de colegios o de invitados), usa el hotspot del celular o un router propio.
+
 ## Si algo no funciona
 
 | Mensaje o síntoma | Qué hacer |
@@ -113,5 +138,6 @@ El cable **GPIO 25 del lector → GPIO 13 de la cámara** (con GND común) es op
 | La OLED no enciende | Revisa que esté en 3.3V y no en 5V. Su dirección debe ser 0x3C. |
 | `Clave de terminal incorrecta` | Abre `INICIAR_NAVI.bat` en la PC y vuelve a subir el programa, para que tome el `servidor.h` nuevo. |
 | El lector no aparece **En línea** | La PC y el ESP32 no están en la misma red, o el Firewall de Windows bloquea Node.js: permite el acceso en redes privadas. |
+| En otro colegio el toque tarda o dice `SERVIDOR NO RESP.` | 1) Si `INICIAR_NAVI` avisa que la red es **Pública**, cámbiala a **Privada** en Windows. 2) Revisa que el servidor esté abierto: el lector lo busca solo y en el Monitor serie dice `Servidor encontrado en la red`. 3) Si la red no deja que los equipos se vean entre sí, usa un router propio o el hotspot de tu celular. En el Monitor serie cada toque dice `Servidor respondio en ... ms`: en una red normal son menos de 100 ms. |
 | LED amarillo con `SIN RED` | El ESP32 guarda los toques y los envía cuando vuelve el WiFi. Revisa el nombre y la clave del WiFi. |
 | `USE TARJETA · NTAG213 O NTAG215` | Esa tarjeta no se puede grabar. Sirve para marcar, pero para la credencial usa NTAG213 o NTAG215. |

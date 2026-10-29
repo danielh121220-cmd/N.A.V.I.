@@ -160,3 +160,24 @@
 | Todos los docentes veían todos los cursos y estudiantes del colegio. | El administrador asigna los docentes de cada curso. Cada docente ve solo sus cursos, estudiantes, registros, avisos, alertas y estadísticas, también en vivo. No puede editar estudiantes ni pasar lista de cursos ajenos. |
 | No se sabía a qué aula pertenecía cada lector. | Cada lector se asigna a un aula desde la pestaña Lector, con un nombre visible. Si un estudiante marca en el lector de otra aula, el registro dice "otra aula". |
 | El saludo decía "Buenas tardes, Prof." | Se saltan los títulos (Prof., Lic., Ing., Dr.) y saluda con el nombre. |
+
+## Ronda 12 (velocidad en otras redes)
+
+| Problema | Corrección |
+| --- | --- |
+| En la red de otro colegio, el lector leía la tarjeta pero el registro tardaba mucho en llegar al servidor y a la app. | El lector abría una conexión nueva para cada toque. En una red WiFi cargada cada conexión nueva tarda y a veces se pierde: se agotaba el tiempo, el toque iba a la cola y la cola se enviaba recién a los 15 s. Ahora (lector-3.6) mantiene **una sola conexión abierta** con el servidor, envía cada toque en un solo paquete y, si algo falla, reintenta al instante con una conexión nueva sin duplicar el registro. La cola se envía a los 2 s de volver la conexión. |
+| Mientras el lector hablaba con el servidor (avisar que sigue conectado, enviar la cola), dejaba de leer tarjetas durante varios segundos. | Toda la comunicación corre aparte, en el otro núcleo del ESP32. La lectura de tarjetas y la pantalla nunca se detienen. |
+| En colegios con varias antenas WiFi del mismo nombre, el ESP32 se conectaba a la primera que encontraba, aunque estuviera lejos. | El lector y la cámara buscan en todos los canales y se conectan a la antena con mejor señal. |
+| El servidor guardaba el estado del lector y le pedía la foto a la cámara antes de responder. | Responde primero al lector y hace el resto después. |
+| Si la conexión en vivo de la app se cortaba sin avisar (cambio de antena, celular que se duerme), la app se quedaba esperando sin recibir los toques. | La app comprueba la conexión cada 10 s y se reconecta sola. Si la red del colegio bloquea la conexión en vivo, la app consulta los registros cada 4 s. |
+| La app tardaba en abrir en redes lentas. | El servidor comprime la app y los datos (unas 3,5 veces menos), y el celular abre la app desde su memoria sin esperar a la red. Cuando la app cambia, se actualiza sola. |
+| Windows marca las redes de otros lugares como "Pública" y su Firewall frena a los lectores. | `INICIAR_NAVI.bat` avisa al arrancar si la red es Pública y explica cómo cambiarla a Privada. |
+
+## Ronda 13 (cualquier red)
+
+| Problema | Corrección |
+| --- | --- |
+| Al cambiar de red (otro colegio, hotspot del celular) la PC tenía otra IP y había que volver a programar el lector y la cámara. | El lector (lector-3.7) y la cámara (camara-3.4) buscan el servidor solos en la red cuando no lo encuentran, comprueban con la clave de terminal que sea el servidor correcto y guardan su dirección. El servidor responde a esa búsqueda. |
+| El lector solo conocía una red WiFi. | Se pueden guardar hasta tres redes en `mis_datos.h`; se conecta a la que encuentre con mejor señal y cambia sola si una se cae. La reconexión corre aparte y no frena la lectura de tarjetas. |
+| En el celular había que escribir la IP del servidor. | La app de Android (3.12) tiene **Buscar en esta red** y busca sola cuando no puede conectarse. |
+

@@ -13,7 +13,7 @@
 - **Un solo servidor para todo el colegio**: una PC con `INICIAR_NAVI.bat` encendida. Cada registro le toma milisegundos, así que puede atender todos los lectores a la vez.
 - **Un lector por aula**, cada uno con su propio nombre (`TERMINAL_ID`).
 - **No hay que dividir IP.** El router le da una IP distinta a cada aparato. El servidor reconoce los equipos por el **nombre del lector** y a los estudiantes por **su tarjeta**.
-- **La única IP que debe quedar fija es la de la PC servidor**, porque todos los lectores la buscan. Pídele al técnico que le haga una **reserva DHCP** en el router.
+- **No hace falta fijar la IP de la PC servidor**: si cambia, los lectores la buscan solos en la red. Si la red del colegio bloquea esa búsqueda, pide al técnico una **reserva DHCP** para la PC.
 
 ## 1. Programar varios lectores
 
@@ -63,7 +63,7 @@ Cualquier estudiante puede marcar en cualquier lector y la asistencia **siempre 
 
 | Problema | Solución |
 | --- | --- |
-| La IP de la PC cambió | Reserva DHCP para la PC servidor. Mientras tanto, vuelve a abrir `INICIAR_NAVI.bat` y vuelve a subir los programas. |
+| La IP de la PC cambió | Los lectores buscan el servidor solos en unos segundos. Si la red bloquea esa búsqueda, pide una reserva DHCP para la PC servidor. |
 | La red del colegio no deja que los aparatos se vean entre sí ("aislamiento de clientes") | Usa un router solo para N.A.V.I, o pide al técnico que lo desactive para esa red. |
 | Red de 5 GHz | Los ESP32 solo funcionan en 2.4 GHz. |
 | Firewall de Windows | Permite Node.js en redes privadas. |

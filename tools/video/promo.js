@@ -563,7 +563,7 @@ scene(60.5, 66.0, el => {
   ic.innerHTML = `<div style="position:absolute;left:50%;top:250px;width:220px;height:220px;margin-left:-110px">${ICON}</div>`;
   const t = title('N.A.V.I', { size: 170, top: 510, cls: 'ink' });
   const sb = sub('Asistencia que cuida.', { top: 720, size: 54, cls: 'gray' });
-  const ft = h('div', 'foot', 'Innovación Tecnológica · 2.ª Ateneo Robotics League');
+  const ft = h('div', 'foot', 'Impacto Tecnológico · KILLTRONIC 8.0');
   el.append(ic, t, sb, ft);
   return { ic: ic.firstChild, t, sb, ft };
 }, (lt, s) => {

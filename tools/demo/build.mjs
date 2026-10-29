@@ -13,6 +13,8 @@ await esbuild.build({
   alias: {
     'better-sqlite3': S('better-sqlite3.js'),
     'node:sqlite': S('empty.js'),
+    zlib: S('empty.js'),
+    dgram: S('empty.js'),
     fs: S('fs.js'),
     crypto: S('crypto.js'),
     os: S('os.js'),

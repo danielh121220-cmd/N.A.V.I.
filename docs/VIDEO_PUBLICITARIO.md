@@ -1,6 +1,6 @@
 # Video publicitario de N.A.V.I
 
-Archivo final: `docs/NAVI_anuncio.mp4` (1920×1080, 30 fps, 79 s, con música y efectos).
+Archivo final: `docs/NAVI_anuncio.mp4` (1920×1080, 30 fps, 79 s, con música y efectos). Cierra con "Impacto Tecnológico · KILLTRONIC 8.0".
 
 El lector (azul), la cámara (blanca) y el llavero que aparecen son los modelos 3D reales de `hardware/cad/salida`, los mismos que se imprimen.
 

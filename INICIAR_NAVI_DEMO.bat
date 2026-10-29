@@ -40,6 +40,16 @@ if errorlevel 1 (
   )
 )
 
+powershell -NoProfile -Command "if (Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object { $_.NetworkCategory -eq 'Public' }) { exit 1 } else { exit 0 }" >nul 2>nul
+if errorlevel 1 (
+  echo.
+  echo  AVISO: Windows tiene esta red como "Publica".
+  echo  En una red publica el Firewall frena a los lectores y el toque tarda o no llega.
+  echo  Arreglo: Configuracion, Red e Internet, Wi-Fi, tu red, Tipo de perfil de red: Privada.
+  echo  Luego cierra esta ventana y vuelve a abrir INICIAR_NAVI.
+  echo.
+)
+
 start "" cmd /c "timeout /t 2 /nobreak >nul & start http://localhost:3000"
 node server.js
 if errorlevel 1 (

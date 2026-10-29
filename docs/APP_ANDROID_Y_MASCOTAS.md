@@ -10,7 +10,15 @@
 
 Requisitos: Android 7 o superior. Para leer y grabar tarjetas, el celular debe tener NFC activado.
 
-Versión actual: **3.10**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+Versión actual: **3.12**. Si ya tenías instalada una anterior, instala esta encima: se actualiza sin borrar la dirección del servidor ni la sesión.
+
+En la versión 3.12:
+
+- **Buscar en esta red**: la app encuentra sola el servidor, también en el hotspot de un celular. Ya no hace falta escribir la IP.
+
+En la versión 3.11:
+
+- Los toques del lector llegan más rápido a la app y, si la conexión en vivo se corta, se recupera sola.
 
 En la versión 3.10:
 

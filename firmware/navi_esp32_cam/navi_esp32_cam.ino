@@ -1,10 +1,15 @@
 #include "config.h"
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <WiFiMulti.h>
+#include <WiFiUdp.h>
+#include <Preferences.h>
+#include <mbedtls/md.h>
 #include <HTTPClient.h>
 #include <WebServer.h>
 
-#define FIRMWARE "camara-3.2"
+#define FIRMWARE "camara-3.4"
+#define DISCOVERY_PORT 41234
 #define PIN_FLASH 4
 
 #define PWDN_GPIO_NUM 32
@@ -33,6 +38,12 @@ bool wifiWasUp = false;
 bool webStarted = false;
 WebServer web(80);
 int lastPingCode = 0;
+int pingFails = 0;
+unsigned long lastDiscoverAt = 0;
+WiFiMulti wifiMulti;
+Preferences prefs;
+char serverHost[48] = SERVER_HOST;
+uint16_t serverPort = SERVER_PORT;
 
 void IRAM_ATTR onTrigger();
 String baseUrl();
@@ -41,13 +52,82 @@ void ensureWifi();
 void ping();
 void captureAndSend();
 void startWeb();
+bool discoverServer();
 
 void IRAM_ATTR onTrigger() {
   triggered = true;
 }
 
 String baseUrl() {
-  return String("http://") + SERVER_HOST + ":" + String(SERVER_PORT);
+  return String("http://") + serverHost + ":" + String(serverPort);
+}
+
+void loadServer() {
+  prefs.begin("navi", false);
+  String fw = prefs.getString("fwhost", "");
+  String host = prefs.getString("host", "");
+  uint16_t port = prefs.getUShort("port", 0);
+  if (fw == SERVER_HOST && host.length() && host.length() < sizeof(serverHost) && port) {
+    strncpy(serverHost, host.c_str(), sizeof(serverHost) - 1);
+    serverPort = port;
+  }
+}
+
+String hmacHex(const char *msg) {
+  uint8_t out[32];
+  const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  if (!info || mbedtls_md_hmac(info, (const unsigned char *)TERMINAL_KEY, strlen(TERMINAL_KEY), (const unsigned char *)msg, strlen(msg), out) != 0) return "";
+  char hex[65];
+  for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", out[i]);
+  return String(hex);
+}
+
+bool discoverServer() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  WiFiUDP udp;
+  if (!udp.begin(0)) return false;
+  char nonce[24];
+  snprintf(nonce, sizeof(nonce), "%08lx%08lx", (unsigned long)esp_random(), (unsigned long)esp_random());
+  String query = String("NAVI?") + nonce;
+  String proof = hmacHex(nonce);
+  IPAddress targets[2] = { IPAddress(255, 255, 255, 255), WiFi.broadcastIP() };
+  for (int round = 0; round < 3; round++) {
+    for (int t = 0; t < 2; t++) {
+      udp.beginPacket(targets[t], DISCOVERY_PORT);
+      udp.print(query);
+      udp.endPacket();
+    }
+    uint32_t start = millis();
+    while (millis() - start < 700) {
+      int n = udp.parsePacket();
+      if (n > 0) {
+        char buf[320];
+        int len = udp.read(buf, sizeof(buf) - 1);
+        if (len <= 0) continue;
+        buf[len] = 0;
+        String r(buf);
+        int pi = r.indexOf("\"proof\":\"");
+        int po = r.indexOf("\"port\":");
+        if (pi < 0 || po < 0) continue;
+        String p = r.substring(pi + 9, r.indexOf('"', pi + 9));
+        uint16_t port = r.substring(po + 7).toInt();
+        if (!proof.length() || proof != p || !port) continue;
+        String ip = udp.remoteIP().toString();
+        udp.stop();
+        strncpy(serverHost, ip.c_str(), sizeof(serverHost) - 1);
+        serverHost[sizeof(serverHost) - 1] = 0;
+        serverPort = port;
+        prefs.putString("fwhost", SERVER_HOST);
+        prefs.putString("host", ip);
+        prefs.putUShort("port", port);
+        Serial.println("Servidor encontrado en la red: " + baseUrl());
+        return true;
+      }
+      delay(10);
+    }
+  }
+  udp.stop();
+  return false;
 }
 
 bool initCamera() {
@@ -105,8 +185,7 @@ void ensureWifi() {
   wifiWasUp = false;
   if (millis() - lastWifiTry < 10000) return;
   lastWifiTry = millis();
-  WiFi.disconnect();
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  if (wifiMulti.run(6000) == WL_CONNECTED) WiFi.setSleep(false);
 }
 
 void ping() {
@@ -117,6 +196,7 @@ void ping() {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Terminal-Key", TERMINAL_KEY);
   int code = http.POST(String("{\"terminal_id\":\"") + TERMINAL_ID + "\",\"kind\":\"CAMARA\",\"firmware\":\"" + FIRMWARE + "\",\"rssi\":" + String(WiFi.RSSI()) + "}");
+  pingFails = code > 0 ? 0 : pingFails + 1;
   if (code != lastPingCode) {
     if (code == 200) Serial.println("Servidor conectado. En la app: Lector -> Hardware conectado -> camara En linea");
     else if (code < 0) Serial.println("No llego al servidor " + baseUrl() + ": revisa que INICIAR_NAVI este abierto y el mismo WiFi");
@@ -180,13 +260,16 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(PIN_TRIGGER), onTrigger, RISING);
   cameraOk = initCamera();
   Serial.println(cameraOk ? (psramFound() ? "Camara lista (con PSRAM, fotos VGA)" : "Camara lista (sin PSRAM, fotos pequenas: activa PSRAM en Herramientas)") : "Error al iniciar la camara: revisa que el cable plano de la camara este bien encajado y que la placa sea AI Thinker ESP32-CAM");
+  loadServer();
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
-  Serial.printf("Conectando al WiFi \"%s\"...\n", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.setAutoReconnect(true);
+  wifiMulti.addAP(WIFI_SSID, WIFI_PASS);
+  if (strlen(WIFI_SSID_2)) wifiMulti.addAP(WIFI_SSID_2, WIFI_PASS_2);
+  if (strlen(WIFI_SSID_3)) wifiMulti.addAP(WIFI_SSID_3, WIFI_PASS_3);
+  Serial.printf("Conectando al WiFi \"%s\"%s...\n", WIFI_SSID, strlen(WIFI_SSID_2) ? " (o a las otras redes guardadas)" : "");
+  wifiMulti.run(12000);
   lastWifiTry = millis();
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) delay(200);
   if (WiFi.status() == WL_CONNECTED) {
     wifiWasUp = true;
     Serial.print("WiFi OK, IP de la camara: ");
@@ -219,9 +302,16 @@ void loop() {
       captureAndSend();
     }
   }
-  if (millis() - lastPing > 30000) {
+  if (millis() - lastPing > (lastPingCode == 200 ? 30000UL : 10000UL)) {
     lastPing = millis();
     ping();
+    if (pingFails >= 2 && WiFi.status() == WL_CONNECTED && millis() - lastDiscoverAt > 8000) {
+      lastDiscoverAt = millis();
+      if (discoverServer()) {
+        pingFails = 0;
+        ping();
+      }
+    }
   }
   delay(2);
 }

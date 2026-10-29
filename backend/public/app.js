@@ -159,13 +159,17 @@
     if (S.token) headers.Authorization = 'Bearer ' + S.token;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     let res;
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), method === 'GET' ? 15000 : 30000) : 0;
     try {
-      res = await fetch('/api' + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+      res = await fetch('/api' + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal: ctrl ? ctrl.signal : undefined });
     } catch (e) {
+      clearTimeout(timer);
       const err = new Error('No hay conexión con el servidor');
       err.code = 'OFFLINE';
       throw err;
     }
+    clearTimeout(timer);
     let data = null;
     try { data = await res.json(); } catch (e) {}
     if (!res.ok) {
@@ -675,6 +679,8 @@
     S.token = null;
     S.user = null;
     if (S.ws) { S.ws.onclose = null; S.ws.close(); S.ws = null; }
+    clearInterval(wsBeat);
+    stopPolling();
     stopCam();
     closeSheet(true);
     if (viewCleanup) { viewCleanup(); viewCleanup = null; }
@@ -852,9 +858,13 @@
   }
 
   let statsTimer = 0;
+  let statsBusy = false;
+  let statsAgain = false;
   function refreshStats() {
     clearTimeout(statsTimer);
     statsTimer = setTimeout(async () => {
+      if (statsBusy) { statsAgain = true; return; }
+      statsBusy = true;
       try {
         const [status, courses, risk] = await Promise.all([api('/status'), api('/courses'), api('/early-warning').catch(() => S.risk || [])]);
         S.stats = status.stats;
@@ -862,7 +872,34 @@
         S.risk = risk;
         softRefresh();
       } catch (e) {}
+      statsBusy = false;
+      if (statsAgain) { statsAgain = false; refreshStats(); }
     }, 220);
+  }
+
+  let pollTimer = 0;
+  let pollBusy = false;
+  async function pollOnce() {
+    if (!S.user || (S.ws && S.ws.readyState === 1)) { stopPolling(); return; }
+    if (pollBusy || document.visibilityState === 'hidden') return;
+    pollBusy = true;
+    try {
+      const [records, review] = await Promise.all([api('/attendance'), api('/review')]);
+      S.records = records;
+      S.review = review;
+      softRefresh();
+      refreshStats();
+    } catch (e) {}
+    pollBusy = false;
+  }
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollOnce, 4000);
+    pollOnce();
+  }
+  function stopPolling() {
+    clearInterval(pollTimer);
+    pollTimer = 0;
   }
   async function loadStudents() {
     try { S.students = await api('/students'); softRefresh(); } catch (e) {}
@@ -884,12 +921,35 @@
   window.naviSmsResult = (id, ok, error) => wsSend({ type: 'sms_result', id, ok, error });
 
   let wsRetry = 0;
+  let wsBeat = 0;
+  let wsLast = 0;
+  let wsDownTimer = 0;
   function connectWS() {
     if (!S.token) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(S.token)}`);
     S.ws = ws;
+    clearInterval(wsBeat);
+    wsLast = Date.now();
+    wsBeat = setInterval(() => {
+      if (S.ws !== ws) { clearInterval(wsBeat); return; }
+      if (ws.readyState === 1 && Date.now() - wsLast > 25000) {
+        ws.onclose = null;
+        try { ws.close(); } catch (e) {}
+        S.ws = null;
+        setConn(false);
+        wsRetry++;
+        startPolling();
+        connectWS();
+        return;
+      }
+      if (ws.readyState === 1) { try { ws.send('ping'); } catch (e) {} }
+    }, 10000);
     ws.onopen = () => {
+      wsLast = Date.now();
+      clearTimeout(wsDownTimer);
+      wsDownTimer = 0;
+      stopPolling();
       if (wsRetry > 0) loadAll();
       wsRetry = 0;
       setConn(true);
@@ -898,11 +958,14 @@
     ws.onclose = () => {
       setConn(false);
       if (!S.user || S.ws !== ws) return;
+      clearInterval(wsBeat);
       wsRetry++;
+      if (!pollTimer && !wsDownTimer) wsDownTimer = setTimeout(() => { wsDownTimer = 0; if (S.user && (!S.ws || S.ws.readyState !== 1)) startPolling(); }, 2500);
       if (wsRetry === 3) api('/auth/me').catch(() => {});
       setTimeout(() => { if (S.user && S.ws === ws) connectWS(); }, Math.min(8000, 800 * wsRetry));
     };
     ws.onmessage = e => {
+      wsLast = Date.now();
       if (e.data === 'pong') return;
       let m;
       try { m = JSON.parse(e.data); } catch (err) { return; }
@@ -911,6 +974,14 @@
   }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && S.user && (!S.ws || S.ws.readyState > 1)) { S.ws = null; connectWS(); }
+  });
+  addEventListener('online', () => {
+    if (S.user && S.token && (!S.ws || S.ws.readyState !== 1)) {
+      if (S.ws) { S.ws.onclose = null; try { S.ws.close(); } catch (e) {} }
+      S.ws = null;
+      wsRetry = Math.max(wsRetry, 1);
+      connectWS();
+    }
   });
 
   function upsertRecord(r) {
@@ -2966,7 +3037,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
             </div>
             <div class="group" style="margin-top:26px"><button class="cell has-icon" data-act="tour">${ico('wand', 'purple')}<div class="grow"><div class="t">Ver el recorrido</div><div class="s">Tu bot te enseña la app en un minuto</div></div>${icon('chevron', 'chev')}</button></div>
             <div class="group" style="margin-top:26px"><button class="cell center danger" data-act="logout">Cerrar sesión</button></div>
-            <p class="group-foot" style="text-align:center;margin-top:10px">N.A.V.I 3.10</p>
+            <p class="group-foot" style="text-align:center;margin-top:10px">N.A.V.I 3.12</p>
           </div>
         </div>`;
     },

@@ -10,6 +10,8 @@ Pase de lista con tarjetas NFC, avisos automáticos a los representantes y verif
    - **`INICIAR_NAVI_DEMO.bat`**: la demostración, con estudiantes de ejemplo, la cuenta demo y el simulador del lector. Usa su propia base de datos (`backend/data-demo`), así que nunca se mezcla con la real.
 3. La primera vez instala lo necesario y abre el navegador en `http://localhost:3000`.
 
+Funciona sin internet, en el WiFi del colegio o en el hotspot de un celular: el lector y la app encuentran el servidor solos (sección 7 de [`PROBAR_CON_LOS_MODULOS.md`](PROBAR_CON_LOS_MODULOS.md)).
+
 Para todo un colegio (un lector por aula y cada docente viendo solo sus cursos), lee [`docs/VARIOS_LECTORES_Y_CURSOS.md`](docs/VARIOS_LECTORES_Y_CURSOS.md).
 
 Para probar con el lector real (ESP32 + PN532), sigue [`PROBAR_CON_LOS_MODULOS.md`](PROBAR_CON_LOS_MODULOS.md): el servidor deja lista la IP y la clave en el firmware y solo escribes tu WiFi en `mis_datos.h`.
@@ -17,6 +19,8 @@ Para probar con el lector real (ESP32 + PN532), sigue [`PROBAR_CON_LOS_MODULOS.m
 En la app de Android, escribe **12122008** en el campo del servidor y toca **Conectar**: se abre la demostración completa dentro del celular, sin servidor.
 
 Para instalarla como app en la PC o en el celular, lee [`docs/INSTALAR_APP.md`](docs/INSTALAR_APP.md).
+
+Para la competencia (KILLTRONIC 8.0, Impacto Tecnológico): informe técnico de 8 páginas en [`docs/INFORME_TECNICO_NAVI.docx`](docs/INFORME_TECNICO_NAVI.docx) y guía de exposición en [`docs/GUIA_DE_COMPETENCIA_PITCH.md`](docs/GUIA_DE_COMPETENCIA_PITCH.md).
 
 ## Qué hace
 

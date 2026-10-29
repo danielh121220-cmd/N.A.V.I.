@@ -1,6 +1,9 @@
 #include "config.h"
 #include <WiFi.h>
-#include <HTTPClient.h>
+#include <WiFiMulti.h>
+#include <WiFiUdp.h>
+#include <Preferences.h>
+#include <mbedtls/md.h>
 #include <Wire.h>
 #include <Adafruit_PN532.h>
 #include <Adafruit_GFX.h>
@@ -13,7 +16,8 @@
 Adafruit_VL53L0X lox;
 #endif
 
-#define FIRMWARE "lector-3.5"
+#define FIRMWARE "lector-3.7"
+#define DISCOVERY_PORT 41234
 #define QUEUE_FILE "/cola.csv"
 
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -38,9 +42,8 @@ uint32_t sessionId = 0;
 String lastUid = "";
 unsigned long lastUidAt = 0;
 unsigned long feedbackUntil = 0;
-unsigned long lastPing = 0;
 unsigned long lastWifiTry = 0;
-unsigned long lastSync = 0;
+unsigned long lastPingFailAt = 0;
 unsigned long lastIdleDraw = 0;
 uint32_t presenceCounter = 0;
 bool personHere = false;
@@ -49,6 +52,43 @@ bool wifiWasUp = false;
 unsigned long lastNfcTry = 0;
 unsigned long lastNfcCheck = 0;
 int lastPingCode = 0;
+unsigned long waitingSince = 0;
+uint32_t tapCounter = 0;
+
+#define JOB_SCAN 1
+#define JOB_WRITTEN 2
+
+struct NetJob {
+  uint8_t kind;
+  bool ntag;
+  uint32_t tap;
+  uint32_t presence;
+  char uid[24];
+  char data[280];
+};
+
+struct NetResult {
+  int code;
+  uint32_t ms;
+  bool ntag;
+  char uid[24];
+  char body[1400];
+};
+
+WiFiMulti wifiMulti;
+Preferences prefs;
+char serverHost[48] = SERVER_HOST;
+uint16_t serverPort = SERVER_PORT;
+int pingFails = 0;
+unsigned long lastDiscoverAt = 0;
+volatile bool netWifiUp = false;
+
+QueueHandle_t jobQ = nullptr;
+QueueHandle_t resQ = nullptr;
+WiFiClient net;
+volatile int queueCount = 0;
+volatile bool keyBad = false;
+bool keyBadShown = false;
 
 String baseUrl();
 bool timeValid();
@@ -79,11 +119,91 @@ bool nfcAlive();
 bool startNfc();
 void ping();
 void sendScan(const String &uid, const String &cred, bool ntag);
+void handleResult(NetResult &r);
+int netPost(const char *path, const String &body, String &out, uint32_t timeoutMs, int tries = 2);
+void netTask(void *arg);
+int countQueue();
+bool discoverServer();
+void loadServer();
+void addNetworks();
 void ensureWifi();
 void updatePresence();
 
 String baseUrl() {
-  return String("http://") + SERVER_HOST + ":" + String(SERVER_PORT);
+  return String("http://") + serverHost + ":" + String(serverPort);
+}
+
+void addNetworks() {
+  wifiMulti.addAP(WIFI_SSID, WIFI_PASS);
+  if (strlen(WIFI_SSID_2)) wifiMulti.addAP(WIFI_SSID_2, WIFI_PASS_2);
+  if (strlen(WIFI_SSID_3)) wifiMulti.addAP(WIFI_SSID_3, WIFI_PASS_3);
+}
+
+void loadServer() {
+  prefs.begin("navi", false);
+  String fw = prefs.getString("fwhost", "");
+  String host = prefs.getString("host", "");
+  uint16_t port = prefs.getUShort("port", 0);
+  if (fw == SERVER_HOST && host.length() && host.length() < sizeof(serverHost) && port) {
+    strncpy(serverHost, host.c_str(), sizeof(serverHost) - 1);
+    serverPort = port;
+  }
+}
+
+String hmacHex(const char *msg) {
+  uint8_t out[32];
+  const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  if (!info || mbedtls_md_hmac(info, (const unsigned char *)TERMINAL_KEY, strlen(TERMINAL_KEY), (const unsigned char *)msg, strlen(msg), out) != 0) return "";
+  char hex[65];
+  for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", out[i]);
+  return String(hex);
+}
+
+bool discoverServer() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  WiFiUDP udp;
+  if (!udp.begin(0)) return false;
+  char nonce[24];
+  snprintf(nonce, sizeof(nonce), "%08lx%08lx", (unsigned long)esp_random(), (unsigned long)esp_random());
+  String query = String("NAVI?") + nonce;
+  String proof = hmacHex(nonce);
+  IPAddress targets[2] = { IPAddress(255, 255, 255, 255), WiFi.broadcastIP() };
+  for (int round = 0; round < 3; round++) {
+    for (int t = 0; t < 2; t++) {
+      udp.beginPacket(targets[t], DISCOVERY_PORT);
+      udp.print(query);
+      udp.endPacket();
+    }
+    uint32_t start = millis();
+    while (millis() - start < 700) {
+      int n = udp.parsePacket();
+      if (n > 0) {
+        char buf[320];
+        int len = udp.read(buf, sizeof(buf) - 1);
+        if (len <= 0) continue;
+        buf[len] = 0;
+        JsonDocument d;
+        if (deserializeJson(d, buf)) continue;
+        const char *p = d["proof"] | "";
+        uint16_t port = d["port"] | 0;
+        if (!proof.length() || proof != p || !port) continue;
+        String ip = udp.remoteIP().toString();
+        udp.stop();
+        bool changed = ip != serverHost || port != serverPort;
+        strncpy(serverHost, ip.c_str(), sizeof(serverHost) - 1);
+        serverHost[sizeof(serverHost) - 1] = 0;
+        serverPort = port;
+        prefs.putString("fwhost", SERVER_HOST);
+        prefs.putString("host", ip);
+        prefs.putUShort("port", port);
+        if (changed) Serial.println("Servidor encontrado en la red: " + baseUrl());
+        return true;
+      }
+      delay(10);
+    }
+  }
+  udp.stop();
+  return false;
 }
 
 bool timeValid() {
@@ -143,12 +263,7 @@ void drawIdle() {
     localtime_r(&now, &t);
     strftime(hhmm, sizeof(hhmm), "%H:%M", &t);
   }
-  int pending = 0;
-  File f = LittleFS.open(QUEUE_FILE, "r");
-  if (f) {
-    while (f.available()) if (f.read() == '\n') pending++;
-    f.close();
-  }
+  int pending = queueCount;
   oled(nfcOk ? "ACERQUE" : "SIN LECTOR", nfcOk ? "SU TARJETA" : "REVISE PN532", String(hhmm) + (pending ? "  cola: " + String(pending) : ""));
 }
 
@@ -230,22 +345,16 @@ String writeNdef(const char *hex) {
 }
 
 void reportWrite(const String &job, const String &uid, const String &err) {
-  if (WiFi.status() != WL_CONNECTED) return;
   JsonDocument doc;
   doc["job"] = job;
   doc["uid"] = uid;
   doc["ok"] = err.length() == 0;
   if (err.length()) doc["error"] = err;
   doc["terminal_id"] = TERMINAL_ID;
-  String body;
-  serializeJson(doc, body);
-  HTTPClient http;
-  http.begin(baseUrl() + "/api/terminal/written");
-  http.setTimeout(2500);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Terminal-Key", TERMINAL_KEY);
-  http.POST(body);
-  http.end();
+  NetJob j = {};
+  j.kind = JOB_WRITTEN;
+  serializeJson(doc, j.data, sizeof(j.data));
+  if (jobQ) xQueueSend(jobQ, &j, pdMS_TO_TICKS(50));
 }
 
 void handleWrite(JsonDocument &r, const String &uid, bool ntag) {
@@ -368,10 +477,20 @@ void queueOffline(const String &uid, const String &cred, bool ntag) {
   uint32_t epoch = timeValid() ? (uint32_t)time(nullptr) : 0;
   f.printf("%s,%lu,%lu,%lu,%s,%d\n", uid.c_str(), (unsigned long)epoch, (unsigned long)sessionId, (unsigned long)millis(), cred.c_str(), ntag ? 1 : 0);
   f.close();
+  queueCount = queueCount + 1;
+}
+
+int countQueue() {
+  int n = 0;
+  File f = LittleFS.open(QUEUE_FILE, "r");
+  if (!f) return 0;
+  while (f.available()) if (f.read() == '\n') n++;
+  f.close();
+  return n;
 }
 
 void syncQueue() {
-  if (WiFi.status() != WL_CONNECTED || !LittleFS.exists(QUEUE_FILE)) return;
+  if (WiFi.status() != WL_CONNECTED || queueCount <= 0 || !LittleFS.exists(QUEUE_FILE)) return;
   File f = LittleFS.open(QUEUE_FILE, "r");
   if (!f) return;
   JsonDocument doc;
@@ -410,16 +529,14 @@ void syncQueue() {
     count++;
   }
   f.close();
-  if (!count) return;
+  if (!count) {
+    queueCount = countQueue();
+    return;
+  }
   String body;
   serializeJson(doc, body);
-  HTTPClient http;
-  http.begin(baseUrl() + "/api/attendance/batch");
-  http.setTimeout(5000);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Terminal-Key", TERMINAL_KEY);
-  int code = http.POST(body);
-  http.end();
+  String out;
+  int code = netPost("/api/attendance/batch", body, out, 6000);
   if (code == 200) {
     if (rest.length()) {
       File w = LittleFS.open(QUEUE_FILE, "w");
@@ -428,85 +545,307 @@ void syncQueue() {
     } else {
       LittleFS.remove(QUEUE_FILE);
     }
+    queueCount = countQueue();
     Serial.printf("Cola sincronizada: %d registros\n", count);
   }
 }
 
 void ping() {
   if (WiFi.status() != WL_CONNECTED) return;
-  HTTPClient http;
-  http.begin(baseUrl() + "/api/terminal/ping");
-  http.setTimeout(3000);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Terminal-Key", TERMINAL_KEY);
   String body = String("{\"terminal_id\":\"") + TERMINAL_ID + "\",\"kind\":\"LECTOR\",\"firmware\":\"" + FIRMWARE + "\",\"rssi\":" + String(WiFi.RSSI()) + "}";
-  int code = http.POST(body);
+  String out;
+  uint32_t t0 = millis();
+  int code = netPost("/api/terminal/ping", body, out, 2500, 1);
+  if (code <= 0) {
+    lastPingFailAt = millis();
+    pingFails++;
+  } else {
+    pingFails = 0;
+  }
   if (code != lastPingCode) {
-    if (code == 200) Serial.println("Servidor conectado. En la app: Lector -> Hardware conectado -> En linea");
+    if (code == 200) Serial.printf("Servidor conectado (%lu ms). En la app: Lector -> Hardware conectado -> En linea\n", (unsigned long)(millis() - t0));
     else if (code < 0) Serial.println("No llego al servidor " + baseUrl() + ": revisa que INICIAR_NAVI este abierto, que la PC y el ESP32 esten en el mismo WiFi y el Firewall de Windows");
     else if (code != 401) Serial.printf("El servidor respondio %d\n", code);
     lastPingCode = code;
   }
   if (code == 200) {
+    keyBad = false;
     JsonDocument doc;
-    if (!deserializeJson(doc, http.getString())) setClock(doc["server_time"] | 0);
+    if (!deserializeJson(doc, out)) setClock(doc["server_time"] | 0);
   } else if (code == 401) {
-    Serial.println("Clave de terminal incorrecta: abre INICIAR_NAVI en la PC y vuelve a subir el programa");
-    oled("CLAVE", "INCORRECTA", "ABRA INICIAR_NAVI");
+    if (!keyBad) Serial.println("Clave de terminal incorrecta: abre INICIAR_NAVI en la PC y vuelve a subir el programa");
+    keyBad = true;
   }
-  http.end();
+}
+
+bool netOpen(uint32_t timeoutMs) {
+  if (net.connected()) return true;
+  net.stop();
+  if (!net.connect(serverHost, serverPort, (int32_t)timeoutMs)) return false;
+  net.setNoDelay(true);
+  return true;
+}
+
+int netReadByte(uint32_t start, uint32_t timeoutMs) {
+  while (!net.available()) {
+    if (!net.connected()) return -1;
+    if (millis() - start > timeoutMs) return -2;
+    delay(1);
+  }
+  return net.read();
+}
+
+bool netReadLine(String &line, uint32_t start, uint32_t timeoutMs) {
+  line = "";
+  for (;;) {
+    int c = netReadByte(start, timeoutMs);
+    if (c < 0) return false;
+    if (c == '\r') continue;
+    if (c == '\n') return true;
+    if (line.length() < 400) line += (char)c;
+  }
+}
+
+int netRead(String &out, uint32_t timeoutMs) {
+  uint32_t start = millis();
+  String line;
+  if (!netReadLine(line, start, timeoutMs)) return -2;
+  int sp = line.indexOf(' ');
+  int code = sp > 0 ? line.substring(sp + 1).toInt() : 0;
+  if (code <= 0) return -4;
+  long len = -1;
+  bool chunked = false;
+  bool close = false;
+  for (;;) {
+    if (!netReadLine(line, start, timeoutMs)) return -2;
+    if (!line.length()) break;
+    line.toLowerCase();
+    if (line.startsWith("content-length:")) len = line.substring(15).toInt();
+    else if (line.startsWith("transfer-encoding:") && line.indexOf("chunked") > 0) chunked = true;
+    else if (line.startsWith("connection:") && line.indexOf("close") > 0) close = true;
+  }
+  out = "";
+  if (chunked) {
+    for (;;) {
+      if (!netReadLine(line, start, timeoutMs)) return -2;
+      long n = strtol(line.c_str(), nullptr, 16);
+      if (n <= 0) {
+        netReadLine(line, start, timeoutMs);
+        break;
+      }
+      for (long i = 0; i < n; i++) {
+        int c = netReadByte(start, timeoutMs);
+        if (c < 0) return -2;
+        if (out.length() < 4000) out += (char)c;
+      }
+      netReadLine(line, start, timeoutMs);
+    }
+  } else if (len >= 0) {
+    out.reserve(len);
+    for (long i = 0; i < len; i++) {
+      int c = netReadByte(start, timeoutMs);
+      if (c < 0) return -2;
+      out += (char)c;
+    }
+  } else {
+    close = true;
+    for (;;) {
+      int c = netReadByte(start, timeoutMs);
+      if (c < 0) break;
+      if (out.length() < 4000) out += (char)c;
+    }
+  }
+  if (close) net.stop();
+  return code;
+}
+
+int netPost(const char *path, const String &body, String &out, uint32_t timeoutMs, int tries) {
+  for (int attempt = 0; attempt < tries; attempt++) {
+    if (WiFi.status() != WL_CONNECTED) return -1;
+    bool reused = net.connected();
+    if (!netOpen(attempt ? 2500 : 1500)) {
+      net.stop();
+      continue;
+    }
+    while (net.available()) net.read();
+    String req;
+    req.reserve(body.length() + 240);
+    req += "POST ";
+    req += path;
+    req += " HTTP/1.1\r\nHost: ";
+    req += serverHost;
+    req += ":";
+    req += String(serverPort);
+    req += "\r\nX-Terminal-Key: ";
+    req += TERMINAL_KEY;
+    req += "\r\nContent-Type: application/json\r\nConnection: keep-alive\r\nContent-Length: ";
+    req += String(body.length());
+    req += "\r\n\r\n";
+    req += body;
+    if (net.write((const uint8_t *)req.c_str(), req.length()) != req.length()) {
+      net.stop();
+      continue;
+    }
+    int code = netRead(out, timeoutMs);
+    if (code > 0) return code;
+    net.stop();
+    if (!reused) return -1;
+  }
+  return -1;
 }
 
 void sendScan(const String &uid, const String &cred, bool ntag) {
+  NetJob j = {};
+  j.kind = JOB_SCAN;
+  j.ntag = ntag;
+  j.tap = ++tapCounter;
+#if USE_PRESENCE_SENSOR
+  j.presence = presenceCounter;
+#endif
+  strncpy(j.uid, uid.c_str(), sizeof(j.uid) - 1);
+  strncpy(j.data, cred.c_str(), sizeof(j.data) - 1);
+  if (!jobQ || xQueueSend(jobQ, &j, 0) != pdTRUE) {
+    feedback("ERROR", false, "OCUPADO", "ACERQUE OTRA VEZ");
+    lastUid = "";
+    return;
+  }
+  waitingSince = millis();
+}
+
+void netScan(NetJob &j) {
+  static NetResult r;
+  memset(&r, 0, sizeof(r));
+  strncpy(r.uid, j.uid, sizeof(r.uid) - 1);
+  r.ntag = j.ntag;
   if (WiFi.status() != WL_CONNECTED) {
-    queueOffline(uid, cred, ntag);
-    feedback("OFFLINE", false, "GUARDADO", "SIN RED");
+    queueOffline(String(j.uid), String(j.data), j.ntag);
+    r.code = -2;
+    xQueueSend(resQ, &r, pdMS_TO_TICKS(200));
+    return;
+  }
+  if (lastPingCode < 0 && millis() - lastPingFailAt < 6000) {
+    queueOffline(String(j.uid), String(j.data), j.ntag);
+    r.code = -1;
+    xQueueSend(resQ, &r, pdMS_TO_TICKS(200));
     return;
   }
   JsonDocument doc;
-  doc["uid"] = uid;
+  doc["uid"] = j.uid;
   doc["terminal_id"] = TERMINAL_ID;
-  if (cred.length()) doc["cred"] = cred;
-  if (ntag) doc["ntag"] = true;
+  doc["tap"] = String(sessionId) + "-" + String(j.tap);
+  if (j.data[0]) doc["cred"] = j.data;
+  if (j.ntag) doc["ntag"] = true;
 #if USE_PRESENCE_SENSOR
-  doc["presence_id"] = String(sessionId) + "-" + String(presenceCounter);
+  doc["presence_id"] = String(sessionId) + "-" + String(j.presence);
 #endif
   String body;
   serializeJson(doc, body);
-  HTTPClient http;
-  http.begin(baseUrl() + "/api/attendance/scan");
-  http.setTimeout(2500);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Terminal-Key", TERMINAL_KEY);
-  int code = http.POST(body);
+  String out;
+  uint32_t t0 = millis();
+  int code = netPost("/api/attendance/scan", body, out, 3500);
+  r.ms = millis() - t0;
   if (code <= 0) {
-    http.end();
-    queueOffline(uid, cred, ntag);
+    queueOffline(String(j.uid), String(j.data), j.ntag);
+    r.code = -1;
+    Serial.printf("Servidor no respondio en %lu ms: guardado en la cola\n", (unsigned long)r.ms);
+  } else {
+    r.code = code;
+    strncpy(r.body, out.c_str(), sizeof(r.body) - 1);
+    Serial.printf("Servidor respondio en %lu ms\n", (unsigned long)r.ms);
+  }
+  xQueueSend(resQ, &r, pdMS_TO_TICKS(200));
+}
+
+void netTask(void *arg) {
+  unsigned long lastPingAt = 0;
+  unsigned long lastSyncAt = 0;
+  bool wasUp = false;
+  queueCount = countQueue();
+  NetJob j;
+  for (;;) {
+    if (xQueueReceive(jobQ, &j, pdMS_TO_TICKS(150)) == pdTRUE) {
+      if (j.kind == JOB_SCAN) netScan(j);
+      else if (j.kind == JOB_WRITTEN && WiFi.status() == WL_CONNECTED) {
+        String out;
+        netPost("/api/terminal/written", String(j.data), out, 2500);
+      }
+      continue;
+    }
+    bool up = WiFi.status() == WL_CONNECTED;
+    netWifiUp = up;
+    if (!up) {
+      if (wasUp) net.stop();
+      wasUp = false;
+      if (millis() - lastWifiTry > 8000) {
+        lastWifiTry = millis();
+        if (wifiMulti.run(6000) == WL_CONNECTED) {
+          WiFi.setSleep(false);
+          Serial.printf("WiFi OK (%s), IP del lector: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+        }
+      }
+      continue;
+    }
+    unsigned long now = millis();
+    if (!wasUp) {
+      wasUp = true;
+      lastPingAt = 0;
+      lastSyncAt = 0;
+      pingFails = 0;
+    }
+    if (pingFails >= 2 && (!lastDiscoverAt || now - lastDiscoverAt > 8000)) {
+      lastDiscoverAt = now ? now : 1;
+      if (discoverServer()) {
+        net.stop();
+        pingFails = 0;
+        lastPingAt = 0;
+      } else {
+        pingFails = 2;
+      }
+      continue;
+    }
+    if (!lastPingAt || now - lastPingAt > (lastPingCode == 200 ? 20000UL : 5000UL)) {
+      lastPingAt = now ? now : 1;
+      ping();
+      continue;
+    }
+    if (queueCount > 0 && lastPingCode == 200 && (!lastSyncAt || now - lastSyncAt > 2000)) {
+      lastSyncAt = now ? now : 1;
+      syncQueue();
+    }
+  }
+}
+
+void handleResult(NetResult &r) {
+  waitingSince = 0;
+  String uid = String(r.uid);
+  if (r.code == -2) {
+    feedback("OFFLINE", false, "GUARDADO", "SIN RED");
+    return;
+  }
+  if (r.code <= 0) {
     feedback("OFFLINE", false, "GUARDADO", "SERVIDOR NO RESP.");
     return;
   }
-  String resp = http.getString();
-  http.end();
-  if (code == 401) {
+  if (r.code == 401) {
     feedback("ERROR", false, "CLAVE", "INCORRECTA");
     return;
   }
-  JsonDocument r;
-  if (deserializeJson(r, resp)) {
+  JsonDocument doc;
+  if (deserializeJson(doc, r.body)) {
     feedback("ERROR", false, "ERROR", "RESPUESTA");
     return;
   }
-  String status = r["status"] | "ERROR";
+  String status = doc["status"] | "ERROR";
   if (status == "REPETIDO") return;
   if (status == "GRABAR") {
-    handleWrite(r, uid, ntag);
+    handleWrite(doc, uid, r.ntag);
     return;
   }
-  bool review = r["review"] | false;
-  String l1 = r["display"]["line1"] | "";
-  String l2 = r["display"]["line2"] | "";
-  String l3 = r["display"]["line3"] | "";
-  const char *bmp = r["mascot"] | "";
+  bool review = doc["review"] | false;
+  String l1 = doc["display"]["line1"] | "";
+  String l2 = doc["display"]["line2"] | "";
+  String l3 = doc["display"]["line3"] | "";
+  const char *bmp = doc["mascot"] | "";
   if (showMascot(bmp, l1, l2, l3)) {
     alertFor(status, review);
     feedbackUntil = millis() + (l3.length() ? 7000 : 1800);
@@ -522,19 +861,11 @@ void sendScan(const String &uid, const String &cred, bool ntag) {
 }
 
 void ensureWifi() {
-  if (WiFi.status() == WL_CONNECTED) {
-    if (!wifiWasUp) {
-      wifiWasUp = true;
-      Serial.print("WiFi OK, IP del lector: ");
-      Serial.println(WiFi.localIP());
-    }
-    return;
+  bool up = netWifiUp;
+  if (up != wifiWasUp) {
+    wifiWasUp = up;
+    if (!feedbackUntil && !waitingSince) drawIdle();
   }
-  wifiWasUp = false;
-  if (millis() - lastWifiTry < 10000) return;
-  lastWifiTry = millis();
-  WiFi.disconnect();
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
 }
 
 #if USE_PRESENCE_SENSOR
@@ -650,23 +981,26 @@ void setup() {
   }
 #endif
   configTime(-5 * 3600, 0, "pool.ntp.org", "time.google.com");
+  loadServer();
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
-  Serial.printf("Conectando al WiFi \"%s\"...\n", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.setAutoReconnect(true);
+  addNetworks();
+  Serial.printf("Conectando al WiFi \"%s\"%s...\n", WIFI_SSID, strlen(WIFI_SSID_2) ? " (o a las otras redes guardadas)" : "");
+  wifiMulti.run(12000);
   lastWifiTry = millis();
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) delay(200);
   if (WiFi.status() == WL_CONNECTED) {
     wifiWasUp = true;
-    Serial.print("WiFi OK, IP del lector: ");
-    Serial.println(WiFi.localIP());
+    netWifiUp = true;
+    Serial.printf("WiFi OK (%s), IP del lector: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
     Serial.println("Servidor: " + baseUrl());
-    ping();
-    lastPing = millis();
+    WiFi.setSleep(false);
   } else {
     Serial.println("WiFi no conectado: revisa WIFI_SSID y WIFI_PASS en mis_datos.h. El ESP32 solo usa redes de 2.4 GHz.");
   }
+  jobQ = xQueueCreate(8, sizeof(NetJob));
+  resQ = xQueueCreate(3, sizeof(NetResult));
+  xTaskCreatePinnedToCore(netTask, "navi-red", 10240, nullptr, 1, nullptr, 0);
   leds(false, false, false);
   beepOk();
   drawIdle();
@@ -677,22 +1011,29 @@ void loop() {
 #if USE_PRESENCE_SENSOR
   updatePresence();
 #endif
+  if (resQ) {
+    static NetResult res;
+    if (xQueueReceive(resQ, &res, 0) == pdTRUE) handleResult(res);
+  }
+  if (waitingSince && millis() - waitingSince > 9000) {
+    waitingSince = 0;
+    feedback("OFFLINE", false, "GUARDADO", "SERVIDOR NO RESP.");
+  }
+  if (keyBad != keyBadShown) {
+    keyBadShown = keyBad;
+    if (keyBadShown) {
+      oled("CLAVE", "INCORRECTA", "ABRA INICIAR_NAVI");
+      feedbackUntil = millis() + 4000;
+    }
+  }
   if (feedbackUntil && millis() > feedbackUntil) {
     feedbackUntil = 0;
     leds(false, false, false);
     drawIdle();
   }
-  if (!feedbackUntil && millis() - lastIdleDraw > 20000) {
+  if (!feedbackUntil && !waitingSince && millis() - lastIdleDraw > 20000) {
     lastIdleDraw = millis();
     drawIdle();
-  }
-  if (millis() - lastPing > 30000) {
-    lastPing = millis();
-    ping();
-  }
-  if (millis() - lastSync > 15000) {
-    lastSync = millis();
-    syncQueue();
   }
   if (!nfcOk) {
     if (millis() - lastNfcTry > 5000) {

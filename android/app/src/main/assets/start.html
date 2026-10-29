@@ -44,10 +44,11 @@ button { font: inherit; border: 0; cursor: pointer; }
   <form class="group" id="form" autocomplete="off">
     <label><span>Servidor</span><input id="server" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="192.168.1.50:3000"></label>
   </form>
-  <p class="foot">La dirección aparece en la ventana de INICIAR_NAVI en la PC, en la línea "En tu red WiFi". El celular y la PC deben estar en la misma red.</p>
+  <p class="foot">Toca "Buscar en esta red" o escribe la dirección que aparece en la ventana de INICIAR_NAVI, en la línea "En tu red WiFi". El celular y la PC deben estar en la misma red o en el mismo hotspot.</p>
   <div class="recent" id="recent"></div>
   <div class="err" id="err"></div>
   <button class="primary" id="go" type="button">Conectar</button>
+  <button class="secondary" id="find" type="button">Buscar en esta red</button>
   <p class="ver" id="ver"></p>
 </main>
 <script>
@@ -120,6 +121,47 @@ button { font: inherit; border: 0; cursor: pointer; }
     go.onclick = function () { remember(u); if (A) A.setServer(u); };
     err.textContent = 'No encuentro el servidor en ' + u.replace(/^https?:\/\//, '') + '.';
   }
+  var find = document.getElementById('find');
+  if (!A || !A.discover) find.style.display = 'none';
+  function search(auto) {
+    if (!A || !A.discover) return;
+    find.disabled = true;
+    find.textContent = 'Buscando en esta red…';
+    window.naviFound = function (found) {
+      find.disabled = false;
+      find.textContent = 'Buscar en esta red';
+      var real = found.filter(function (x) { return !x.demo; });
+      var pick = real.length ? real : found;
+      if (!pick.length) {
+        if (!auto) err.textContent = 'No encontré N.A.V.I en esta red. Revisa que INICIAR_NAVI esté abierto en la PC y que estén en la misma red.';
+        return;
+      }
+      err.textContent = '';
+      if (pick.length === 1) {
+        input.value = pick[0].url.replace(/^https?:\/\//, '');
+        go.textContent = 'Conectar';
+        go.onclick = function () { connect(false); };
+        if (!auto) { connect(true); return; }
+        var b = document.getElementById('banner');
+        b.textContent = 'Encontré N.A.V.I en ' + input.value + (pick[0].name ? ' (' + pick[0].name + ')' : '') + '. Toca Conectar.';
+        b.style.background = 'rgba(52, 199, 89, 0.15)';
+        b.classList.add('show');
+        return;
+      }
+      var box = document.getElementById('recent');
+      box.innerHTML = '';
+      pick.forEach(function (x) {
+        var bt = document.createElement('button');
+        bt.type = 'button';
+        bt.textContent = x.url.replace(/^https?:\/\//, '') + (x.name ? ' · ' + x.name : '');
+        bt.onclick = function () { input.value = x.url.replace(/^https?:\/\//, ''); connect(true); };
+        box.appendChild(bt);
+      });
+    };
+    try { A.discover(); } catch (e) { find.disabled = false; find.textContent = 'Buscar en esta red'; }
+  }
+  find.onclick = function () { search(false); };
+  if (A && A.discover && (!saved || location.hash === '#sin-conexion')) search(true);
   go.onclick = function () { connect(false); };
   input.addEventListener('input', function () { go.textContent = 'Conectar'; go.onclick = function () { connect(false); }; err.textContent = ''; });
   document.getElementById('form').addEventListener('submit', function (e) { e.preventDefault(); connect(false); });

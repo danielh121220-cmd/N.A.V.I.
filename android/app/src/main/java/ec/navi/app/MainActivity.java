@@ -36,7 +36,14 @@ import android.webkit.WebViewClient;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
+import java.net.SocketTimeoutException;
 import java.nio.charset.Charset;
+import java.util.Enumeration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -47,7 +54,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private static final int FILE_REQUEST = 42;
     private static final int SMS_REQUEST = 77;
     private static final String SMS_SENT = "ec.navi.app.SMS_SENT";
-    private static final String VERSION = "3.10";
+    private static final String VERSION = "3.12";
 
     private WebView web;
     private NfcAdapter nfc;
@@ -590,6 +597,71 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         public void resetServer() {
             prefs.edit().remove("server").remove("demo").apply();
             go(START);
+        }
+
+        @JavascriptInterface
+        public void discover() {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    JSONArray found = new JSONArray();
+                    DatagramSocket sock = null;
+                    try {
+                        sock = new DatagramSocket();
+                        sock.setBroadcast(true);
+                        sock.setSoTimeout(250);
+                        byte[] q = "NAVI?".getBytes(Charset.forName("UTF-8"));
+                        ArrayList<InetAddress> targets = new ArrayList<InetAddress>();
+                        targets.add(InetAddress.getByName("255.255.255.255"));
+                        Enumeration<NetworkInterface> ifs = NetworkInterface.getNetworkInterfaces();
+                        while (ifs != null && ifs.hasMoreElements()) {
+                            NetworkInterface ni = ifs.nextElement();
+                            if (!ni.isUp() || ni.isLoopback()) continue;
+                            for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                                if (ia.getBroadcast() != null) targets.add(ia.getBroadcast());
+                            }
+                        }
+                        ArrayList<String> seen = new ArrayList<String>();
+                        long end = System.currentTimeMillis() + 1800;
+                        int round = 0;
+                        while (System.currentTimeMillis() < end) {
+                            if (round < 3) {
+                                for (InetAddress t : targets) {
+                                    try {
+                                        sock.send(new DatagramPacket(q, q.length, t, 41234));
+                                    } catch (Exception e) {
+                                    }
+                                }
+                                round++;
+                            }
+                            byte[] buf = new byte[512];
+                            DatagramPacket p = new DatagramPacket(buf, buf.length);
+                            try {
+                                sock.receive(p);
+                            } catch (SocketTimeoutException e) {
+                                continue;
+                            }
+                            try {
+                                JSONObject o = new JSONObject(new String(p.getData(), 0, p.getLength(), Charset.forName("UTF-8")));
+                                if (o.optInt("navi", 0) != 1) continue;
+                                String url = "http://" + p.getAddress().getHostAddress() + ":" + o.optInt("port", 3000);
+                                if (seen.contains(url)) continue;
+                                seen.add(url);
+                                JSONObject r = new JSONObject();
+                                r.put("url", url);
+                                r.put("name", o.optString("name", ""));
+                                r.put("demo", o.optBoolean("demo", false));
+                                found.put(r);
+                            } catch (Exception e) {
+                            }
+                        }
+                    } catch (Exception e) {
+                    } finally {
+                        if (sock != null) sock.close();
+                    }
+                    js("window.naviFound&&window.naviFound(" + found.toString() + ")");
+                }
+            }).start();
         }
 
         @JavascriptInterface

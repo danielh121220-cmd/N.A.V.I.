@@ -3,6 +3,9 @@ const http = require('http');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+const dgram = require('dgram');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const config = require('./config');
 const { db, getSettings, setSetting, nextMascot } = require('./database');
@@ -17,6 +20,8 @@ const P = require('./pet');
 
 const app = express();
 const server = http.createServer(app);
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
 const wss = new WebSocketServer({ noServer: true });
 
 app.disable('x-powered-by');
@@ -30,12 +35,73 @@ app.use((req, res, next) => {
   next();
 });
 
+const acceptsGzip = req => /\bgzip\b/.test((req.headers && req.headers['accept-encoding']) || '');
+app.use('/api', (req, res, next) => {
+  if (!acceptsGzip(req)) return next();
+  res.json = body => {
+    const text = JSON.stringify(body === undefined ? null : body);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (text.length < 1400) return res.send(text);
+    const gz = zlib.gzipSync(text, { level: 5 });
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Vary', 'Accept-Encoding');
+    res.setHeader('Content-Length', gz.length);
+    return res.end(gz);
+  };
+  next();
+});
+
 const PUBLIC = path.join(__dirname, 'public');
+const fileHash = buf => crypto.createHash('sha1').update(buf).digest('base64url').slice(0, 16);
+let swCache = null;
+function serviceWorker() {
+  const src = fs.readFileSync(path.join(PUBLIC, 'sw.js'), 'utf8');
+  const m = /const SHELL = (\[[^\]]*\]);/.exec(src);
+  const files = m ? (m[1].match(/'[^']*'/g) || []).map(x => x.slice(1, -1)) : [];
+  const stamp = [src.length].concat(files.map(f => { try { return fs.statSync(path.join(PUBLIC, f === '/' ? 'index.html' : f)).mtimeMs; } catch (e) { return 0; } })).join('|');
+  if (swCache && swCache.stamp === stamp) return swCache.body;
+  const h = crypto.createHash('sha1').update(src);
+  for (const f of files) { try { h.update(fs.readFileSync(path.join(PUBLIC, f === '/' ? 'index.html' : f))); } catch (e) {} }
+  const body = src.replace(/const VERSION = '[^']*';/, `const VERSION = 'navi-${h.digest('base64url').slice(0, 12)}';`);
+  swCache = { stamp, body };
+  return body;
+}
 app.get('/sw.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(PUBLIC, 'sw.js'));
+  res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+  res.send(serviceWorker());
 });
-app.use(express.static(PUBLIC, { maxAge: 0, etag: true }));
+const GZ_TYPES = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json; charset=utf-8' };
+const gzCache = new Map();
+app.use((req, res, next) => {
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || !acceptsGzip(req)) return next();
+  let rel;
+  try { rel = decodeURIComponent(req.path); } catch (e) { return next(); }
+  if (rel === '/') rel = '/index.html';
+  const type = GZ_TYPES[path.extname(rel)];
+  if (!type || rel.startsWith('/api/')) return next();
+  const file = path.join(PUBLIC, rel);
+  if (!file.startsWith(PUBLIC + path.sep)) return next();
+  let st;
+  try { st = fs.statSync(file); } catch (e) { return next(); }
+  if (!st.isFile() || st.size < 1024) return next();
+  let c = gzCache.get(file);
+  if (!c || c.mtime !== st.mtimeMs || c.size !== st.size) {
+    const raw = fs.readFileSync(file);
+    c = { mtime: st.mtimeMs, size: st.size, etag: `"${fileHash(raw)}"`, gz: zlib.gzipSync(raw, { level: 9 }) };
+    gzCache.set(file, c);
+  }
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.setHeader('ETag', c.etag);
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.headers['if-none-match'] === c.etag) return res.status(304).end();
+  res.setHeader('Content-Type', type);
+  res.setHeader('Content-Encoding', 'gzip');
+  res.setHeader('Content-Length', c.gz.length);
+  if (req.method === 'HEAD') return res.end();
+  res.end(c.gz);
+});
+app.use(express.static(PUBLIC, { maxAge: 0, etag: true, setHeaders(res, file) { if (file.includes(`${path.sep}fonts${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); } }));
 
 function scopeOf(user) {
   if (!user || user.role === 'ADMINISTRADOR' || config.demoMode) return null;
@@ -704,10 +770,13 @@ function dataUrlToBuffer(s) {
   return m ? Buffer.from(m[2], 'base64') : null;
 }
 
+const tapCache = new Map();
 app.post('/api/attendance/scan', auth.requireTerminalOrUser, wrap((req, res) => {
   const b = req.body || {};
   const terminalId = String(b.terminal_id || 'ESP32-AULA-1').slice(0, 40);
-  if (req.viaTerminal) touchTerminal(terminalId, 'LECTOR', req, b);
+  const tapKey = req.viaTerminal && b.tap ? `${terminalId}|${String(b.tap).slice(0, 40)}` : null;
+  const cached = tapKey && tapCache.get(tapKey);
+  if (cached && Date.now() - cached.at < 120000) return res.status(cached.code).json(cached.body);
   const out = A.scan({
     uid: b.uid,
     terminalId,
@@ -719,8 +788,18 @@ app.post('/api/attendance/scan', auth.requireTerminalOrUser, wrap((req, res) => 
     ntag: b.ntag === true,
     simulated: !req.viaTerminal
   });
-  if (req.viaTerminal && out.body && !['DUPLICADO', 'GRABADO', 'ERROR_GRABAR'].includes(out.body.status)) askCamera(terminalId);
+  if (tapKey) {
+    tapCache.set(tapKey, { code: out.code, body: out.body, at: Date.now() });
+    if (tapCache.size > 300) tapCache.delete(tapCache.keys().next().value);
+  }
   res.status(out.code).json(out.body);
+  if (req.viaTerminal) {
+    const photo = out.body && !['DUPLICADO', 'GRABADO', 'ERROR_GRABAR', 'REPETIDO'].includes(out.body.status);
+    setImmediate(() => {
+      touchTerminal(terminalId, 'LECTOR', req, b);
+      if (photo) askCamera(terminalId);
+    });
+  }
 }));
 
 function askCamera(terminalId) {
@@ -737,8 +816,11 @@ app.post('/api/attendance/batch', auth.requireTerminalOrUser, wrap((req, res) =>
   const b = req.body || {};
   const terminalId = String(b.terminal_id || 'ESP32-AULA-1').slice(0, 40);
   const records = Array.isArray(b.records) ? b.records.slice(0, 500) : [];
-  const results = records.map(r => A.scan({ uid: r.uid, terminalId, ts: r.ts, source: 'OFFLINE', cred: typeof r.cred === 'string' ? r.cred.slice(0, 200) : null, ntag: r.ntag === true }).body.status);
+  const results = db.transaction(() => records.map(r => {
+    try { return A.scan({ uid: r.uid, terminalId, ts: r.ts, source: 'OFFLINE', cred: typeof r.cred === 'string' ? r.cred.slice(0, 200) : null, ntag: r.ntag === true }).body.status; } catch (e) { return 'ERROR'; }
+  }))();
   res.json({ processed: results.length, results });
+  if (req.viaTerminal) setImmediate(() => touchTerminal(terminalId, 'LECTOR', req, b));
 }));
 
 app.get('/api/roll/:courseId', auth.requireUser, ownCourse, (req, res) => {
@@ -819,13 +901,19 @@ app.get('/api/notifications', auth.requireUser, (req, res) => {
   res.json(db.q(`SELECT n.*, s.first_name || ' ' || s.last_name AS student_name FROM notifications n LEFT JOIN students s ON s.id = n.student_id ${where} ORDER BY n.id DESC LIMIT ?`).all(limit));
 });
 
+const terminalSeen = new Map();
 function touchTerminal(id, kind, req, b = {}) {
   const key = kind === 'CAMARA' ? `${id}#CAM` : id;
+  const seen = terminalSeen.get(key);
+  const now = Date.now();
   const ip = (req.socket.remoteAddress || '').replace('::ffff:', '');
   db.q(`INSERT INTO terminals (id, kind, ip, firmware, rssi, last_seen) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET ip = excluded.ip, firmware = COALESCE(excluded.firmware, firmware), rssi = COALESCE(excluded.rssi, rssi), last_seen = excluded.last_seen, kind = excluded.kind`)
-    .run(key, kind, ip, b.firmware || null, b.rssi != null ? Number(b.rssi) : null, new Date().toISOString());
-  broadcast('terminal', { id: key, kind, online: true });
+    .run(key, kind, ip, b.firmware || null, b.rssi != null ? Number(b.rssi) : null, new Date(now).toISOString());
+  if (!seen || now - seen.at > 30000 || seen.ip !== ip || (b.firmware && seen.fw !== b.firmware)) {
+    terminalSeen.set(key, { at: now, ip, fw: b.firmware || (seen && seen.fw) || null });
+    broadcast('terminal', { id: key, kind, online: true });
+  }
 }
 
 app.post('/api/terminal/ping', wrap((req, res) => {
@@ -987,15 +1075,35 @@ function writeFirmwareConfig(host) {
     const mine = path.join(dir, 'mis_datos.h');
     try {
       if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== body) fs.writeFileSync(f, body);
-      if (!fs.existsSync(mine)) fs.writeFileSync(mine, `#pragma once\n\n#define WIFI_SSID "TU_RED_WIFI"\n#define WIFI_PASS "TU_CONTRASENA_WIFI"\n\n#define TERMINAL_ID "ESP32-AULA-1"\n${d === 'navi_esp32_pn532' ? '\n#define PN532_UART 0\n' : ''}`);
+      if (!fs.existsSync(mine)) fs.writeFileSync(mine, `#pragma once\n\n#define WIFI_SSID "TU_RED_WIFI"\n#define WIFI_PASS "TU_CONTRASENA_WIFI"\n\n#define WIFI_SSID_2 ""\n#define WIFI_PASS_2 ""\n\n#define WIFI_SSID_3 ""\n#define WIFI_PASS_3 ""\n\n#define TERMINAL_ID "ESP32-AULA-1"\n${d === 'navi_esp32_pn532' ? '\n#define PN532_UART 0\n' : ''}`);
       done.push(d);
     } catch (e) {}
   }
   return done;
 }
 
+const DISCOVERY_PORT = 41234;
+function startDiscovery() {
+  let sock;
+  try { sock = dgram.createSocket({ type: 'udp4', reuseAddr: true }); } catch (e) { return; }
+  sock.on('message', (msg, rinfo) => {
+    if (msg.length > 200) return;
+    const text = msg.toString('utf8');
+    if (!text.startsWith('NAVI?')) return;
+    const nonce = text.slice(5).trim().slice(0, 64);
+    const name = (db.q("SELECT institution_name FROM users WHERE institution_name IS NOT NULL AND email != 'demo@navi.local' ORDER BY id LIMIT 1").get() || {}).institution_name || config.institutionName;
+    const out = { navi: 1, port: config.port, name, demo: config.demoMode };
+    if (nonce) out.proof = crypto.createHmac('sha256', config.terminalKey).update(nonce).digest('hex');
+    sock.send(JSON.stringify(out), rinfo.port, rinfo.address, () => {});
+  });
+  sock.on('error', e => console.log(`  Búsqueda automática en la red no disponible (${e.code || e.message}). Los lectores usarán la IP de servidor.h.`));
+  sock.bind(DISCOVERY_PORT);
+}
+
 if (require.main === module) {
   server.listen(config.port, () => {
+    startDiscovery();
+    if (typeof fetch === 'function') fetch(`http://127.0.0.1:${config.port}/api/info`).catch(() => {});
     A.purgeOldPhotos();
     setTimeout(() => A.runAbsences(), 3000);
     notifier.startTelegram();

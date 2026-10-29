@@ -145,7 +145,7 @@ Si cargas el ejemplo *I2C Scanner* deberías ver:
 4. Sube `navi_esp32_pn532.ino` al ESP32 (placa *ESP32 Dev Module*, **Partition Scheme: Huge APP (3MB No OTA/1MB SPIFFS)**, porque con la partición por defecto no cabe) y `navi_esp32_cam.ino` al ESP32-CAM (placa *AI Thinker ESP32-CAM*).
 5. En **Lector → Hardware conectado** deben aparecer el lector y la cámara como "En línea".
 
-Si la IP de la PC cambia, vuelve a abrir `INICIAR_NAVI.bat` y vuelve a subir el programa. La guía paso a paso está en [`PROBAR_CON_LOS_MODULOS.md`](../PROBAR_CON_LOS_MODULOS.md).
+Si la IP de la PC cambia, el lector y la cámara buscan el servidor solos en la red; no hace falta volver a programarlos. La guía paso a paso está en [`PROBAR_CON_LOS_MODULOS.md`](../PROBAR_CON_LOS_MODULOS.md).
 
 ## 9. Qué significa cada señal del lector
 

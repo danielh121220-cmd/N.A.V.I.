@@ -10,6 +10,14 @@
 #ifndef WIFI_PASS
 #define WIFI_PASS "TU_CONTRASENA_WIFI"
 #endif
+#ifndef WIFI_SSID_2
+#define WIFI_SSID_2 ""
+#define WIFI_PASS_2 ""
+#endif
+#ifndef WIFI_SSID_3
+#define WIFI_SSID_3 ""
+#define WIFI_PASS_3 ""
+#endif
 #ifndef TERMINAL_ID
 #define TERMINAL_ID "ESP32-AULA-1"
 #endif
