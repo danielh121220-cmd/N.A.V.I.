@@ -776,9 +776,12 @@ void netTask(void *arg) {
     if (!up) {
       if (wasUp) net.stop();
       wasUp = false;
-      if (millis() - lastWifiTry > 8000) {
+      if (millis() - lastWifiTry > 12000) {
+        while (xQueueReceive(jobQ, &j, 0) == pdTRUE) {
+          if (j.kind == JOB_SCAN) netScan(j);
+        }
         lastWifiTry = millis();
-        if (wifiMulti.run(6000) == WL_CONNECTED) {
+        if (wifiMulti.run(5000) == WL_CONNECTED) {
           WiFi.setSleep(false);
           Serial.printf("WiFi OK (%s), IP del lector: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
         }
