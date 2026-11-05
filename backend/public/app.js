@@ -1874,7 +1874,9 @@
     let mode = c.wa_mode || 'LINK';
     const explain = m => (m === 'API'
       ? 'Los avisos se envían solos desde el número de WhatsApp Business del colegio, con la <b>API oficial de Meta</b>. Necesitas una cuenta de Meta Business y una plantilla aprobada.'
-      : 'N.A.V.I prepara cada mensaje y tú lo envías con <b>un toque</b> desde tu propio WhatsApp. No necesita configurar nada y funciona desde hoy.');
+      : m === 'TWILIO'
+        ? 'Los avisos se envían solos por WhatsApp con <b>Twilio</b>, con el texto completo de N.A.V.I y sin plantillas. Con el sandbox gratuito, cada celular se une una vez enviando un mensaje <b>join</b>.'
+        : 'N.A.V.I prepara cada mensaje y tú lo envías con <b>un toque</b> desde tu propio WhatsApp. No necesita configurar nada y funciona desde hoy.');
     openSheet({
       title: 'WhatsApp',
       left: `<button class="btn btn-plain" data-close>Cancelar</button>`,
@@ -1882,7 +1884,7 @@
       body: `
         <form id="waForm" novalidate autocomplete="off">
           <div class="notif-hero">${ico('chat', 'green')}<div><b>WhatsApp a representantes</b><small>El canal que más leen los padres</small></div></div>
-          <div id="waSeg" style="margin-bottom:10px">${segHtml([['LINK', 'Un toque'], ['API', 'Automático']], mode, 'waMode')}</div>
+          <div id="waSeg" style="margin-bottom:10px">${segHtml([['LINK', 'Un toque'], ['TWILIO', 'Twilio'], ['API', 'Meta']], mode, 'waMode')}</div>
           <p class="group-foot" id="waExplain" style="padding-top:0;margin-bottom:6px">${explain(mode)}</p>
           <div class="group" style="margin-top:14px">
             <div class="cell has-icon">${ico('bell', 'red')}<div class="grow"><div class="t">También en lo urgente</div><div class="s" style="white-space:normal">Ausencias y emergencias van por WhatsApp aunque el correo haya llegado</div></div><label class="switch"><input type="checkbox" name="wa_urgent" ${c.wa_urgent ? 'checked' : ''}><span></span></label></div>
@@ -1902,6 +1904,20 @@
               <li>Cuando Meta la apruebe, pruébala aquí abajo.</li>
             </ol>
           </div>
+          <div class="tw-only ${mode === 'TWILIO' ? '' : 'hidden'}">
+            <div class="group-title">Twilio</div>
+            <div class="group">
+              ${frow('tw_sid', 'Account SID', { value: c.tw_sid, placeholder: 'AC…', attrs: 'class="mono" autocapitalize="off" spellcheck="false"' })}
+              ${frow('tw_token', 'Auth Token', { type: 'password', placeholder: c.tw_token_set ? '•••• guardado (deja vacío)' : 'Auth Token', attrs: 'autocomplete="new-password" spellcheck="false"' })}
+              ${frow('tw_from', 'Número', { value: c.tw_from || '+14155238886', placeholder: '+14155238886', attrs: 'class="mono" inputmode="tel"' })}
+            </div>
+            <ol class="steps">
+              <li>Crea una cuenta gratis en <a href="https://www.twilio.com/try-twilio" target="_blank" rel="noopener">twilio.com</a>.</li>
+              <li>En la consola copia el <b>Account SID</b> y el <b>Auth Token</b> y pégalos aquí.</li>
+              <li>Abre <b>Messaging → Try it out → Send a WhatsApp message</b>. Desde cada celular que recibirá avisos, envía el mensaje <span class="mono">join …</span> que aparece ahí al <span class="mono">+1 415 523 8886</span>.</li>
+              <li>Prueba aquí abajo con uno de esos números.</li>
+            </ol>
+          </div>
           <div class="group-title">Probar</div>
           <div class="group">
             ${frow('to', 'Celular', { type: 'tel', placeholder: '09XXXXXXXX', addon: '<button type="button" class="btn btn-tinted btn-sm" id="testWa">Probar</button>' })}
@@ -1917,25 +1933,29 @@
           mode = b.dataset.k;
           segSelect(b);
           $('.api-only', el).classList.toggle('hidden', mode !== 'API');
+          $('.tw-only', el).classList.toggle('hidden', mode !== 'TWILIO');
           $('#waExplain', el).innerHTML = explain(mode);
           haptic(5);
         });
         const body = () => {
           const v = Object.fromEntries(new FormData(form));
-          const out = { wa_mode: mode, wa_urgent: form.wa_urgent.checked, wa_phone_id: v.wa_phone_id, wa_template: v.wa_template, wa_lang: v.wa_lang };
+          const out = { wa_mode: mode, wa_urgent: form.wa_urgent.checked, wa_phone_id: v.wa_phone_id, wa_template: v.wa_template, wa_lang: v.wa_lang, tw_sid: v.tw_sid, tw_from: v.tw_from };
           if (v.wa_token) out.wa_token = v.wa_token;
+          if (v.tw_token) out.tw_token = v.tw_token;
           return out;
         };
         $('#saveWa', el).addEventListener('click', async ev => {
           const btn = ev.currentTarget;
           const b = body();
           if (mode === 'API' && (!b.wa_phone_id || (!b.wa_token && !c.wa_token_set))) { setFieldError(form, !b.wa_phone_id ? ['wa_phone_id'] : ['wa_token']); return toast({ title: 'Faltan datos de la API', mood: 'confused', sound: 'warn' }); }
+          if (mode === 'TWILIO' && (!b.tw_sid || (!b.tw_token && !c.tw_token_set))) { setFieldError(form, !b.tw_sid ? ['tw_sid'] : ['tw_token']); return toast({ title: 'Faltan datos de Twilio', mood: 'confused', sound: 'warn' }); }
           btn.disabled = true;
           try {
             const r = await api('/messaging', { method: 'PUT', body: b });
             S.channels = r.status;
             c.wa_token_set = r.config.wa_token_set;
-            toast({ title: 'WhatsApp guardado', text: r.status.whatsapp === 'API' ? 'Modo automático' : 'Modo un toque', mood: 'happy', sound: 'success' });
+            c.tw_token_set = r.config.tw_token_set;
+            toast({ title: 'WhatsApp guardado', text: r.status.whatsapp === 'TWILIO' ? 'Automático con Twilio' : r.status.whatsapp === 'API' ? 'Automático con Meta' : 'Modo un toque', mood: 'happy', sound: 'success' });
             closeSheet();
             if (S.view === 'ajustes') renderView();
           } catch (e) { setFieldError(form, e.fields || []); toast({ title: 'No se pudo guardar', text: e.message, mood: 'sad' }); }
@@ -1950,6 +1970,7 @@
           try {
             const saved = await api('/messaging', { method: 'PUT', body: body() });
             c.wa_token_set = saved.config.wa_token_set;
+            c.tw_token_set = saved.config.tw_token_set;
             const r = await api('/messaging/test', { method: 'POST', body: { channel: 'whatsapp', to } });
             if (r.link) $('#waTest', el).innerHTML = `<a class="btn btn-wa btn-lg" style="margin-top:12px" href="${esc(r.link)}" target="_blank" rel="noopener">${icon('chat')} Abrir WhatsApp</a>`;
             else $('#waTest', el).innerHTML = stateBox(true, `Enviado a <b>+${esc(r.to)}</b>. Revisa ese WhatsApp.`);
@@ -3003,7 +3024,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
             <div class="group">
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('mail', 'blue')}<div class="grow"><div class="t">Correo</div><div class="s">${ch.email ? esc(ch.email_from) : (S.demo ? 'Sin configurar · se simula' : 'Sin configurar')}</div></div>${ch.email ? '' : '<span class="pill p-late">Configurar</span>'}${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('door', 'graphite')}<div class="grow"><div class="t">Copia a la institución</div><div class="s">${ch.inst_email ? esc(ch.inst_email) : 'DECE o inspección'}</div></div><span class="v">${ch.inst_email ? { URGENT: 'Urgentes', ALL: 'Todos', NONE: 'Nunca' }[ch.inst_cc] || '' : 'No'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
-              <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgWa"' : ''}>${ico('chat', 'green')}<div class="grow"><div class="t">WhatsApp</div><div class="s">${ch.wa_urgent === false ? 'Solo si no llegó otro aviso' : 'También en ausencias y emergencias'}</div></div><span class="v">${ch.whatsapp === 'API' ? 'Automático' : 'Un toque'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
+              <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgWa"' : ''}>${ico('chat', 'green')}<div class="grow"><div class="t">WhatsApp</div><div class="s">${ch.wa_urgent === false ? 'Solo si no llegó otro aviso' : 'También en ausencias y emergencias'}</div></div><span class="v">${ch.whatsapp === 'TWILIO' ? 'Twilio' : ch.whatsapp === 'API' ? 'Automático' : 'Un toque'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <button class="cell has-icon" data-act="cfgSms">${ico('phone', 'indigo')}<div class="grow"><div class="t">SMS al celular</div><div class="s">${ch.sms ? (ch.sms_device ? 'Desde ' + esc(ch.sms_device) : 'Falta un celular que los envíe') : 'Mensaje de texto normal, sin internet'}</div></div><span class="v">${ch.sms ? (ch.sms_device ? 'Activo' : 'En espera') : 'No'}</span>${icon('chevron', 'chev')}</button>
               <div class="cell has-icon">${ico('send', 'teal')}<div class="grow t">Telegram</div><span class="v">${ch.telegram ? '@' + esc(ch.telegramBot) : 'No configurado'}</span></div>
             </div>

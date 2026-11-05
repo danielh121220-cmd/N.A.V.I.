@@ -35,9 +35,12 @@ const DEFAULTS = {
   wa_template: 'navi_aviso',
   wa_lang: 'es',
   wa_urgent: true,
+  tw_sid: '',
+  tw_token: '',
+  tw_from: '+14155238886',
   sms_on: false
 };
-const SECRET_KEYS = ['mail_pass', 'wa_token'];
+const SECRET_KEYS = ['mail_pass', 'wa_token', 'tw_token'];
 
 function readStored() {
   const row = db.q("SELECT value FROM settings WHERE key = 'messaging'").get();
@@ -100,7 +103,11 @@ function saveConfig(input) {
   if (input.inst_cc !== undefined) next.inst_cc = ['NONE', 'URGENT', 'ALL'].includes(input.inst_cc) ? input.inst_cc : 'URGENT';
   if (input.inst_phone !== undefined) next.inst_phone = str(input.inst_phone, 30);
   if (input.signature !== undefined) next.signature = str(input.signature, 160);
-  if (input.wa_mode !== undefined) next.wa_mode = input.wa_mode === 'API' ? 'API' : 'LINK';
+  if (input.wa_mode !== undefined) next.wa_mode = ['API', 'TWILIO'].includes(input.wa_mode) ? input.wa_mode : 'LINK';
+  if (input.tw_sid !== undefined) next.tw_sid = str(input.tw_sid, 64).replace(/[^A-Za-z0-9]/g, '');
+  if (input.tw_token) next.tw_token = str(input.tw_token, 128).replace(/\s+/g, '');
+  if (input.tw_token === null) next.tw_token = '';
+  if (input.tw_from !== undefined) next.tw_from = str(input.tw_from, 24).replace(/[^\d+]/g, '') || '+14155238886';
   if (input.wa_token) next.wa_token = str(input.wa_token, 600);
   if (input.wa_token === null) next.wa_token = '';
   if (input.wa_phone_id !== undefined) next.wa_phone_id = str(input.wa_phone_id, 40).replace(/\D/g, '');
@@ -153,6 +160,13 @@ function friendlyError(e) {
   if (/Unsupported|template|132001|132000/i.test(msg)) return 'La plantilla de WhatsApp no existe o no está aprobada en Meta.';
   if (/190|access token|OAuth/i.test(msg)) return 'El token de WhatsApp venció o no es válido.';
   if (/131030|not in allowed list|recipient phone number not in allowed/i.test(msg)) return 'Ese número no está en la lista de prueba de tu cuenta de WhatsApp Business.';
+  if (/131031|Business Account locked/i.test(msg)) return 'Meta bloqueó la cuenta de WhatsApp Business. Usa Twilio o el modo un toque.';
+  if (/^63015\b|not joined|has not opted in/i.test(msg)) return 'Ese número todavía no se unió al sandbox de Twilio. Desde ese WhatsApp envía el mensaje join que aparece en tu consola de Twilio.';
+  if (/^63016\b|outside the allowed window|24 hour/i.test(msg)) return 'Pasaron más de 24 horas desde que ese número escribió al sandbox. Que vuelva a enviarle cualquier mensaje y prueba otra vez.';
+  if (/^(20003|20404)\b|Authenticat/i.test(msg)) return 'El Account SID o el Auth Token de Twilio no son correctos.';
+  if (/^21211\b|not a valid phone number/i.test(msg)) return 'El número no es válido para Twilio. Usa 09XXXXXXXX o +593…';
+  if (/^21606\b|21608|From phone number/i.test(msg)) return 'El número de Twilio que envía no es válido. En el sandbox es +14155238886.';
+  if (/^63018\b|rate limit/i.test(msg)) return 'Twilio pide esperar unos segundos entre mensajes del sandbox.';
   return msg.slice(0, 200) || 'Error desconocido';
 }
 
@@ -459,7 +473,7 @@ async function deliverWhatsappApi(phone, m, s) {
     const clean = v => String(v || '').replace(/[\n\t]+/g, ' ').replace(/\s{4,}/g, '   ').slice(0, 900);
     template.components = [{ type: 'body', parameters: [{ type: 'text', text: clean((s && s.parent_name) || 'representante') }, { type: 'text', text: clean([m.lead, m.action].filter(Boolean).join(' ')) }] }];
   }
-  const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(c.wa_phone_id)}/messages`, {
+  const res = await fetch(`https://graph.facebook.com/v25.0/${encodeURIComponent(c.wa_phone_id)}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${c.wa_token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'template', template })
@@ -479,7 +493,46 @@ async function sendTelegram(chatId, text) {
   if (!data.ok) throw new Error(data.description || 'Telegram rechazó el mensaje');
 }
 
+async function deliverWhatsappTwilio(phone, m) {
+  const c = getConfig();
+  const to = normalizePhone(phone);
+  if (!to) throw new Error('Número de WhatsApp no válido');
+  const from = String(c.tw_from || '+14155238886').replace(/[^\d+]/g, '');
+  const body = new URLSearchParams({ From: `whatsapp:${from.startsWith('+') ? from : '+' + from}`, To: `whatsapp:+${to}`, Body: String(m.wa || m.text || '').slice(0, 1500) });
+  const auth = Buffer.from(`${c.tw_sid}:${c.tw_token}`).toString('base64');
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(c.tw_sid)}/Messages.json`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error_code) throw new Error(`${data.code || data.error_code || res.status} ${data.message || data.error_message || ''}`.trim());
+  return { to, sid: data.sid };
+}
+
+async function twilioOutcome(sid) {
+  const c = getConfig();
+  const auth = Buffer.from(`${c.tw_sid}:${c.tw_token}`).toString('base64');
+  for (let i = 0; i < 4; i++) {
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(c.tw_sid)}/Messages/${encodeURIComponent(sid)}.json`, { headers: { Authorization: `Basic ${auth}` } });
+      const d = await res.json();
+      if (['failed', 'undelivered'].includes(d.status)) return { ok: false, error: `${d.error_code || ''} ${d.error_message || ''}`.trim() || 'Twilio no pudo entregar el mensaje' };
+      if (['sent', 'delivered', 'read'].includes(d.status)) return { ok: true, status: d.status };
+    } catch (e) {}
+  }
+  return { ok: true, status: 'queued' };
+}
+
+async function deliverWhatsapp(phone, m, s) {
+  const c = getConfig();
+  if (c.wa_mode === 'TWILIO') return deliverWhatsappTwilio(phone, m);
+  return { to: await deliverWhatsappApi(phone, m, s) };
+}
+
 function waApiReady(c) {
+  if (c.wa_mode === 'TWILIO') return Boolean(c.tw_sid && c.tw_token && c.tw_from);
   return c.wa_mode === 'API' && Boolean(c.wa_token && c.wa_phone_id);
 }
 
@@ -538,9 +591,16 @@ async function dispatch(kind, s, course, att, custom, channels) {
     let sentApi = false;
     if (waApiReady(c) && want.whatsapp !== 'link') {
       try {
-        const to = await deliverWhatsappApi(s.parent_phone, m, s);
-        results.push(insertLog(att, s, m, 'WHATSAPP', `+${to}`, m.wa, 'ENVIADO'));
+        const { to, sid } = await deliverWhatsapp(s.parent_phone, m, s);
+        const row = insertLog(att, s, m, 'WHATSAPP', `+${to}`, m.wa, 'ENVIADO');
+        results.push(row);
         sentApi = true;
+        if (sid) twilioOutcome(sid).then(o => {
+          if (o.ok) return;
+          const err = friendlyError(new Error(o.error));
+          db.q("UPDATE notifications SET status = 'FALLIDO', error = ? WHERE id = ?").run(err, row.id);
+          onUpdate({ id: row.id, status: 'FALLIDO', error: err });
+        }).catch(() => {});
       } catch (e) {
         if (!link) results.push(insertLog(att, s, m, 'WHATSAPP', s.parent_phone, m.wa, 'FALLIDO', friendlyError(e)));
         else results.push(insertLog(att, s, m, 'WHATSAPP', link, m.wa, 'ENLACE', `Automático falló: ${friendlyError(e)}`));
@@ -632,7 +692,11 @@ async function testWhatsapp(phone) {
   if (!normalizePhone(phone)) return { ok: false, error: 'El número no parece válido. Usa 09XXXXXXXX o +593…', fields: ['to'] };
   if (!waApiReady(c)) return { ok: true, link };
   try {
-    const to = await deliverWhatsappApi(phone, m, sampleStudent());
+    const { to, sid } = await deliverWhatsapp(phone, m, sampleStudent());
+    if (sid) {
+      const o = await twilioOutcome(sid);
+      if (!o.ok) return { ok: false, error: friendlyError(new Error(o.error)), link };
+    }
     return { ok: true, to };
   } catch (e) {
     return { ok: false, error: friendlyError(e), link };
@@ -718,7 +782,7 @@ function status() {
     email_source: c.mail_source,
     inst_email: c.inst_email || null,
     inst_cc: c.inst_cc,
-    whatsapp: waApiReady(c) ? 'API' : 'LINK',
+    whatsapp: waApiReady(c) ? (c.wa_mode === 'TWILIO' ? 'TWILIO' : 'API') : 'LINK',
     wa_urgent: c.wa_urgent,
     telegram: telegramReady && Boolean(telegramBotName),
     telegramBot: telegramBotName || null,
