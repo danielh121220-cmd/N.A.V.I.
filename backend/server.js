@@ -359,7 +359,8 @@ app.put('/api/messaging', auth.requireUser, wrap(async (req, res) => {
 app.post('/api/messaging/test', auth.requireUser, wrap(async (req, res) => {
   if (!canConfigure(req)) return res.status(403).json({ error: 'Solo un administrador puede hacer esto.' });
   const b = req.body || {};
-  const out = b.channel === 'whatsapp' ? await notifier.testWhatsapp(b.to) : b.channel === 'sms' ? await notifier.testSms(b.to) : await notifier.testEmail(b.to, b.kind);
+  const out = b.channel === 'whatsapp' ? await notifier.testWhatsapp(b.to) : b.channel === 'sms' ? await notifier.testSms(b.to) : b.channel === 'telegram' ? await notifier.testTelegram() : await notifier.testEmail(b.to, b.kind);
+  if (b.channel === 'telegram') broadcast('channels', notifier.status());
   res.status(out.ok ? 200 : 400).json(out.ok ? out : { ...out, error: out.error });
 }));
 
@@ -1141,12 +1142,12 @@ function startDiscovery() {
 }
 
 if (require.main === module) {
-  server.listen(config.port, () => {
+  server.listen(config.port, async () => {
+    await notifier.startTelegram().catch(() => {});
     startDiscovery();
     if (typeof fetch === 'function') fetch(`http://127.0.0.1:${config.port}/api/info`).catch(() => {});
     A.purgeOldPhotos();
     setTimeout(() => A.runAbsences(), 3000);
-    notifier.startTelegram();
     const ips = lanAddresses();
     const ch = notifier.status();
     console.log('');
@@ -1158,7 +1159,7 @@ if (require.main === module) {
     const fw = writeFirmwareConfig(ips);
     if (fw.length) console.log(`  Firmware listo: la IP ${ips[0]} y la clave ya están en firmware/${fw.join('/servidor.h y firmware/')}/servidor.h`);
     if (fw.length) console.log('  Tu WiFi y el nombre de cada lector van en mis_datos.h, junto a servidor.h (no se suben a GitHub).');
-    console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : (config.demoMode ? 'no configurado (se simula)' : 'no configurado')} · Telegram: ${config.telegram.token ? 'configurando...' : 'no configurado'}`);
+    console.log(`  Correo: ${ch.email ? 'configurado (' + ch.email_from + ')' : (config.demoMode ? 'no configurado (se simula)' : 'no configurado')} · Telegram: ${ch.telegram ? '@' + ch.telegramBot : 'se configura en Ajustes → Telegram'}`);
     console.log('');
   });
 }

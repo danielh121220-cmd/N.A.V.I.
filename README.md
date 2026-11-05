@@ -141,7 +141,7 @@ proyecto con pn532/
 │   ├── attendance.js           Asistencia, ausencias, revisión y cámara
 │   ├── pet.js / student.js     Mascotas, corazones y cuenta del estudiante
 │   ├── credential.js           Credencial firmada que se graba en la tarjeta
-│   ├── notifier.js             Correo, SMS, Telegram y enlaces de WhatsApp
+│   ├── notifier.js             Correo, SMS, Telegram y WhatsApp (un toque, Twilio o Meta)
 │   ├── database.js / sqlite.js Esquema y base de datos SQLite integrada en Node
 │   ├── data/ y data-demo/      Datos reales y de la demostración (se crean solos)
 │   └── public/                 App web instalable (PWA)

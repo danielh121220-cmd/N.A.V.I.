@@ -38,9 +38,11 @@ const DEFAULTS = {
   tw_sid: '',
   tw_token: '',
   tw_from: '+14155238886',
+  tw_content: '',
+  tg_token: '',
   sms_on: false
 };
-const SECRET_KEYS = ['mail_pass', 'wa_token', 'tw_token'];
+const SECRET_KEYS = ['mail_pass', 'wa_token', 'tw_token', 'tg_token'];
 
 function readStored() {
   const row = db.q("SELECT value FROM settings WHERE key = 'messaging'").get();
@@ -107,7 +109,10 @@ function saveConfig(input) {
   if (input.tw_sid !== undefined) next.tw_sid = str(input.tw_sid, 64).replace(/[^A-Za-z0-9]/g, '');
   if (input.tw_token) next.tw_token = str(input.tw_token, 128).replace(/\s+/g, '');
   if (input.tw_token === null) next.tw_token = '';
+  if (input.tw_content !== undefined) next.tw_content = str(input.tw_content, 40).replace(/[^A-Za-z0-9]/g, '');
   if (input.tw_from !== undefined) next.tw_from = str(input.tw_from, 24).replace(/[^\d+]/g, '') || '+14155238886';
+  if (input.tg_token) next.tg_token = str(input.tg_token, 120).replace(/\s+/g, '');
+  if (input.tg_token === null) next.tg_token = '';
   if (input.wa_token) next.wa_token = str(input.wa_token, 600);
   if (input.wa_token === null) next.wa_token = '';
   if (input.wa_phone_id !== undefined) next.wa_phone_id = str(input.wa_phone_id, 40).replace(/\D/g, '');
@@ -126,6 +131,7 @@ function saveConfig(input) {
   }
   db.q("INSERT INTO settings (key, value) VALUES ('messaging', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(next));
   transporterKey = '';
+  if ((next.tg_token || '') !== (cur.tg_token || '')) startTelegram();
   return publicConfig();
 }
 
@@ -161,12 +167,16 @@ function friendlyError(e) {
   if (/190|access token|OAuth/i.test(msg)) return 'El token de WhatsApp venció o no es válido.';
   if (/131030|not in allowed list|recipient phone number not in allowed/i.test(msg)) return 'Ese número no está en la lista de prueba de tu cuenta de WhatsApp Business.';
   if (/131031|Business Account locked/i.test(msg)) return 'Meta bloqueó la cuenta de WhatsApp Business. Usa Twilio o el modo un toque.';
-  if (/^63015\b|not joined|has not opted in/i.test(msg)) return 'Ese número todavía no se unió al sandbox de Twilio. Desde ese WhatsApp envía el mensaje join que aparece en tu consola de Twilio.';
+  if (/^63015\b|not joined|has not opted in/i.test(msg)) return 'Ese número todavía no se unió al sandbox de Twilio. Desde ese WhatsApp envía join twilio-trial al +1 737 250 8034 (o el join de tu sandbox).';
   if (/^63016\b|outside the allowed window|24 hour/i.test(msg)) return 'Pasaron más de 24 horas desde que ese número escribió al sandbox. Que vuelva a enviarle cualquier mensaje y prueba otra vez.';
   if (/^(20003|20404)\b|Authenticat/i.test(msg)) return 'El Account SID o el Auth Token de Twilio no son correctos.';
   if (/^21211\b|not a valid phone number/i.test(msg)) return 'El número no es válido para Twilio. Usa 09XXXXXXXX o +593…';
   if (/^21606\b|21608|From phone number/i.test(msg)) return 'El número de Twilio que envía no es válido. En el sandbox es +14155238886.';
   if (/^63018\b|rate limit/i.test(msg)) return 'Twilio pide esperar unos segundos entre mensajes del sandbox.';
+  if (/fetch failed|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|TimeoutError|aborted due to timeout/i.test(msg)) return 'La PC no pudo conectarse a internet para enviar el mensaje. Revisa la conexión y vuelve a probar.';
+  if (/^21654\b|ContentSid Required/i.test(msg)) return 'Tu cuenta de prueba de Twilio solo permite plantillas aprobadas.';
+  if (/^(21656|63027|63028)\b/i.test(msg)) return 'Twilio rechazó los datos de la plantilla del sandbox.';
+  if (/^21655\b|ContentSid is Invalid/i.test(msg)) return `Twilio no acepta la plantilla ${(/\[(HX\w+)\]/.exec(msg) || [])[1] || ''}. Deja Plantilla vacía para usar la plantilla gratuita de prueba.`;
   return msg.slice(0, 200) || 'Error desconocido';
 }
 
@@ -339,10 +349,13 @@ function telegramLinkCode(student) {
   return `${student.student_code}_${sig}`;
 }
 
-const telegramReady = Boolean(config.telegram.token);
+function tgToken() {
+  return getConfig().tg_token || config.telegram.token || '';
+}
 let telegramBotName = '';
+let telegramError = '';
 function telegramLink(student) {
-  if (!telegramReady || !telegramBotName) return null;
+  if (!tgToken() || !telegramBotName) return null;
   return `https://t.me/${telegramBotName}?start=${telegramLinkCode(student)}`;
 }
 
@@ -484,7 +497,7 @@ async function deliverWhatsappApi(phone, m, s) {
 }
 
 async function sendTelegram(chatId, text) {
-  const res = await fetch(`https://api.telegram.org/bot${config.telegram.token}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${tgToken()}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text })
@@ -493,21 +506,62 @@ async function sendTelegram(chatId, text) {
   if (!data.ok) throw new Error(data.description || 'Telegram rechazó el mensaje');
 }
 
+const TW_TEMPLATE = 'HXfe5ab5f00277942d4d4200328b4d403c';
+const TW_TRIAL_FROM = '+17372508034';
+let twTemplateOnly = false;
+
+function twilioVars(m) {
+  const clean = v => String(v || '').replace(/[\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const lead = clean(m.lead || m.subject || m.text);
+  const hit = /(\d{1,2}:\d{2})/.exec(lead);
+  const now = new Date(Date.now() - 5 * 3600000).toISOString().slice(11, 16);
+  const first = lead.split(/\.\s/)[0].replace(/\s*a las \d{1,2}:\d{2}/, '').replace(/[.\s]+$/, '').slice(0, 200);
+  return JSON.stringify({ 1: `N.A.V.I: ${first}`, 2: hit ? hit[1] : now });
+}
+
 async function deliverWhatsappTwilio(phone, m) {
   const c = getConfig();
   const to = normalizePhone(phone);
   if (!to) throw new Error('Número de WhatsApp no válido');
-  const from = String(c.tw_from || '+14155238886').replace(/[^\d+]/g, '');
-  const body = new URLSearchParams({ From: `whatsapp:${from.startsWith('+') ? from : '+' + from}`, To: `whatsapp:+${to}`, Body: String(m.wa || m.text || '').slice(0, 1500) });
+  const own = String(c.tw_from || '+14155238886').replace(/[^\d+]/g, '');
   const auth = Buffer.from(`${c.tw_sid}:${c.tw_token}`).toString('base64');
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(c.tw_sid)}/Messages.json`, {
-    method: 'POST',
-    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error_code) throw new Error(`${data.code || data.error_code || res.status} ${data.message || data.error_message || ''}`.trim());
-  return { to, sid: data.sid };
+  const send = async (mode, withVars = true) => {
+    const from = mode === 'trial' ? TW_TRIAL_FROM : own;
+    const fields = { From: `whatsapp:${from.startsWith('+') ? from : '+' + from}`, To: `whatsapp:+${to}` };
+    if (mode === 'body') fields.Body = String(m.wa || m.text || '').slice(0, 1500);
+    else {
+      fields.ContentSid = mode === 'own' ? c.tw_content : TW_TEMPLATE;
+      if (withVars) fields.ContentVariables = twilioVars(m);
+    }
+    let res;
+    for (let i = 0; ; i++) {
+      try {
+        res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(c.tw_sid)}/Messages.json`, {
+          method: 'POST',
+          headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(fields),
+          signal: AbortSignal.timeout(15000)
+        });
+        break;
+      } catch (e) {
+        if (i >= 2) throw e;
+        await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+      }
+    }
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok && !data.error_code, data, status: res.status, mode, sid: fields.ContentSid };
+  };
+  const code = r => String(r.data.code || r.data.error_code || '');
+  let r = null;
+  if (c.tw_content) r = await send('own');
+  else if (!twTemplateOnly) r = await send('body');
+  if (!r || (!r.ok && (code(r) === '21654' || code(r) === '21655'))) {
+    if (r && r.mode === 'body') twTemplateOnly = true;
+    r = await send('trial');
+  }
+  if (!r.ok && r.mode !== 'body' && !['20003', '20404', '21211', '21655', '63015'].includes(code(r))) r = await send(r.mode, false);
+  if (!r.ok) throw new Error(`${code(r) || r.status} ${r.data.message || r.data.error_message || ''}${r.sid ? ` [${r.sid}]` : ''}`.trim());
+  return { to, sid: r.data.sid, template: r.mode !== 'body' };
 }
 
 async function twilioOutcome(sid) {
@@ -566,7 +620,7 @@ async function dispatch(kind, s, course, att, custom, channels) {
     }
   }
 
-  if (want.telegram && s.parent_telegram && telegramReady) {
+  if (want.telegram && s.parent_telegram && telegramBotName) {
     try {
       await sendTelegram(s.parent_telegram, m.text);
       results.push(insertLog(att, s, m, 'TELEGRAM', s.parent_telegram, m.text, 'ENVIADO'));
@@ -692,12 +746,12 @@ async function testWhatsapp(phone) {
   if (!normalizePhone(phone)) return { ok: false, error: 'El número no parece válido. Usa 09XXXXXXXX o +593…', fields: ['to'] };
   if (!waApiReady(c)) return { ok: true, link };
   try {
-    const { to, sid } = await deliverWhatsapp(phone, m, sampleStudent());
+    const { to, sid, template } = await deliverWhatsapp(phone, m, sampleStudent());
     if (sid) {
       const o = await twilioOutcome(sid);
       if (!o.ok) return { ok: false, error: friendlyError(new Error(o.error)), link };
     }
-    return { ok: true, to };
+    return { ok: true, to, template: Boolean(template) };
   } catch (e) {
     return { ok: false, error: friendlyError(e), link };
   }
@@ -734,27 +788,50 @@ function pending(days = 2) {
     .all(`-${Number(days) || 2} days`);
 }
 
+let tgGen = 0;
 async function startTelegram() {
-  if (!telegramReady) return;
+  const gen = ++tgGen;
+  const token = tgToken();
+  telegramBotName = '';
+  telegramError = '';
+  if (!token) return { ok: false, error: 'Falta el token del bot' };
   try {
-    const me = await (await fetch(`https://api.telegram.org/bot${config.telegram.token}/getMe`)).json();
-    if (me.ok) telegramBotName = me.result.username;
+    const me = await (await fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(15000) })).json();
+    if (!me.ok) {
+      const error = 'Telegram no reconoce ese token. Cópialo otra vez desde @BotFather.';
+      if (gen === tgGen) telegramError = error;
+      return { ok: false, error };
+    }
+    if (gen !== tgGen) return { ok: false, error: 'Se cambió el token' };
+    telegramBotName = me.result.username;
+    await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`).catch(() => {});
   } catch (e) {
+    const error = 'La PC no pudo conectarse a Telegram. Revisa el internet.';
+    if (gen === tgGen) telegramError = error;
     console.warn('Telegram no disponible:', e.message);
-    return;
+    return { ok: false, error };
   }
   let offset = 0;
   const poll = async () => {
+    if (gen !== tgGen) return;
     try {
-      const res = await fetch(`https://api.telegram.org/bot${config.telegram.token}/getUpdates?timeout=25&offset=${offset}`);
+      const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?timeout=25&offset=${offset}`);
       const data = await res.json();
+      if (gen !== tgGen) return;
       if (data.ok) {
         for (const u of data.result) {
           offset = u.update_id + 1;
           const msg = u.message;
           if (!msg || !msg.text) continue;
-          const m = msg.text.match(/^\/start\s+(\S+)/);
-          if (!m) continue;
+          const m = msg.text.match(/^\/start(?:\s+(\S+))?/);
+          if (!m) {
+            await sendTelegram(msg.chat.id, 'Hola, soy el bot de avisos de N.A.V.I. Aquí llegarán los avisos de asistencia una vez que abra el enlace que le envió el docente.');
+            continue;
+          }
+          if (!m[1]) {
+            await sendTelegram(msg.chat.id, 'Hola, soy el bot de avisos de N.A.V.I. Para recibir los avisos de su representado, abra el enlace que le envió el docente.');
+            continue;
+          }
           const code = m[1];
           const studentCode = code.split('_')[0];
           const s = db.q('SELECT * FROM students WHERE student_code = ?').get(studentCode);
@@ -765,6 +842,8 @@ async function startTelegram() {
             await sendTelegram(msg.chat.id, 'Este enlace no es válido. Pídale uno nuevo al docente.');
           }
         }
+      } else if (data.error_code === 401 || data.error_code === 409) {
+        await new Promise(r => setTimeout(r, 10000));
       }
     } catch (e) {
       await new Promise(r => setTimeout(r, 5000));
@@ -772,6 +851,14 @@ async function startTelegram() {
     setImmediate(poll);
   };
   poll();
+  return { ok: true, bot: telegramBotName };
+}
+
+async function testTelegram() {
+  const r = await startTelegram();
+  if (!r.ok) return { ok: false, error: r.error, fields: ['tg_token'] };
+  const linked = db.q('SELECT COUNT(*) AS n FROM students WHERE parent_telegram IS NOT NULL').get().n;
+  return { ok: true, bot: r.bot, link: `https://t.me/${r.bot}`, linked };
 }
 
 function status() {
@@ -784,8 +871,10 @@ function status() {
     inst_cc: c.inst_cc,
     whatsapp: waApiReady(c) ? (c.wa_mode === 'TWILIO' ? 'TWILIO' : 'API') : 'LINK',
     wa_urgent: c.wa_urgent,
-    telegram: telegramReady && Boolean(telegramBotName),
+    telegram: Boolean(telegramBotName),
     telegramBot: telegramBotName || null,
+    telegram_error: telegramError || null,
+    telegram_env: Boolean(config.telegram.token) && !c.tg_token,
     sms: Boolean(c.sms_on),
     sms_device: smsDevice()
   };
@@ -803,6 +892,7 @@ module.exports = {
   preview,
   setListener,
   startTelegram,
+  testTelegram,
   telegramLink,
   status,
   whatsappLink,

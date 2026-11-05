@@ -7,8 +7,9 @@ Por defecto N.A.V.I avisa solo cuando hay **atraso** o **ausencia** (se cambia e
 | Correo | Automático, con diseño, foto del estudiante y copia al DECE | Una cuenta de Gmail con contraseña de aplicación |
 | SMS | Automático, como mensaje de texto normal, aunque el celular del representante no tenga internet | Un celular Android con chip y la app N.A.V.I abierta |
 | WhatsApp un toque | La app prepara el mensaje y tú tocas "Enviar" | Nada, funciona desde hoy |
-| WhatsApp automático | Sale solo desde el número del colegio | Cuenta de Meta Business y una plantilla aprobada |
-| Telegram | Automático y gratis | Un bot de @BotFather (en `backend/.env`) |
+| WhatsApp con Twilio | Automático. Con la cuenta gratis sale dentro de una plantilla de Twilio en inglés; con cuenta pagada, el aviso completo | Cuenta de Twilio (gratis para probar) |
+| WhatsApp con Meta | Sale solo desde el número del colegio | Cuenta de Meta Business y una plantilla aprobada |
+| Telegram | Automático, gratis y con el texto completo | Un bot de @BotFather (se pega en la app) |
 
 ## Correo
 
@@ -60,6 +61,16 @@ Con **También en lo urgente** activado, las ausencias y emergencias se preparan
 
 El celular se puede escribir como `0991234567`, `991234567` o `+593 99 123 4567`. Si está mal escrito, la app no te deja guardarlo.
 
+### Automático con Twilio
+
+1. Crea una cuenta gratis en https://www.twilio.com/try-twilio y copia el **Account SID** y el **Auth Token** de la consola.
+2. En **Try it out → Send a WhatsApp message** elige el celular que recibirá los avisos y, desde ese WhatsApp, envía `join twilio-trial` al **+1 737 250 8034**.
+3. En **Ajustes → Canales → WhatsApp** elige **Twilio**, pega el SID y el token, deja **Plantilla** vacía y toca **Probar**.
+
+Con la cuenta gratis, Twilio no deja mandar texto propio: N.A.V.I lo detecta sola y envía el aviso dentro de la plantilla gratuita de Twilio, por ejemplo *Reminder: Appt N.A.V.I: Daniel Heredia ingresó con atraso, 07:14…*. La cuenta gratis permite un solo celular a la vez. Con una cuenta pagada y el número del sandbox (`+14155238886`) llega el aviso completo en español, siempre que el representante haya escrito al número en las últimas 24 horas.
+
+El Auth Token es como una contraseña: se guarda solo en la PC del servidor, nunca en GitHub, y no se comparte en capturas ni chats.
+
 ### Automático (API oficial de Meta)
 
 WhatsApp no permite que un programa escriba solo a cualquier número sin su API oficial. Para activarla:
@@ -84,10 +95,10 @@ Toca el aviso en **Inicio → Avisos** para ver el mensaje completo, a quién se
 
 ## Telegram
 
-1. En Telegram habla con **@BotFather**, escribe `/newbot` y sigue los pasos.
-2. Copia el token en `backend/.env`: `TELEGRAM_BOT_TOKEN=123456:ABC...` y reinicia `INICIAR_NAVI.bat`.
+1. En Telegram habla con **@BotFather**, escribe `/newbot`, ponle un nombre (por ejemplo **N.A.V.I Avisos**) y un usuario que termine en `bot`.
+2. Copia el token que te da y pégalo en **Ajustes → Canales → Telegram**. Toca **Probar**: debe decir *Conectado con @tu_bot*. No hace falta reiniciar.
 3. En **Estudiantes → (estudiante) → Copiar enlace de Telegram** obtienes un enlace único para ese representante. Cuando lo abra y toque **Iniciar**, queda vinculado.
 
 ## Configuración por archivo (opcional)
 
-Si prefieres, el correo también se puede poner en `backend/.env` con `SMTP_USER` y `SMTP_PASS`. Lo que configures en la app tiene prioridad.
+Si prefieres, el correo también se puede poner en `backend/.env` con `SMTP_USER` y `SMTP_PASS`, y Telegram con `TELEGRAM_BOT_TOKEN`. Lo que configures en la app tiene prioridad.

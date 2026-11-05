@@ -1875,7 +1875,7 @@
     const explain = m => (m === 'API'
       ? 'Los avisos se envían solos desde el número de WhatsApp Business del colegio, con la <b>API oficial de Meta</b>. Necesitas una cuenta de Meta Business y una plantilla aprobada.'
       : m === 'TWILIO'
-        ? 'Los avisos se envían solos por WhatsApp con <b>Twilio</b>, con el texto completo de N.A.V.I y sin plantillas. Con el sandbox gratuito, cada celular se une una vez enviando un mensaje <b>join</b>.'
+        ? 'Los avisos se envían solos por WhatsApp con <b>Twilio</b>. Con la cuenta gratis de prueba salen dentro de la plantilla de Twilio en inglés desde el <b>+1 737 250 8034</b>; con una cuenta pagada llega el aviso completo de N.A.V.I. Deja <b>Plantilla</b> vacía y N.A.V.I elige sola.'
         : 'N.A.V.I prepara cada mensaje y tú lo envías con <b>un toque</b> desde tu propio WhatsApp. No necesita configurar nada y funciona desde hoy.');
     openSheet({
       title: 'WhatsApp',
@@ -1910,12 +1910,13 @@
               ${frow('tw_sid', 'Account SID', { value: c.tw_sid, placeholder: 'AC…', attrs: 'class="mono" autocapitalize="off" spellcheck="false"' })}
               ${frow('tw_token', 'Auth Token', { type: 'password', placeholder: c.tw_token_set ? '•••• guardado (deja vacío)' : 'Auth Token', attrs: 'autocomplete="new-password" spellcheck="false"' })}
               ${frow('tw_from', 'Número', { value: c.tw_from || '+14155238886', placeholder: '+14155238886', attrs: 'class="mono" inputmode="tel"' })}
+              ${frow('tw_content', 'Plantilla', { value: c.tw_content || '', placeholder: 'Vacía = la gratuita', attrs: 'class="mono" autocapitalize="off" spellcheck="false"' })}
             </div>
             <ol class="steps">
               <li>Crea una cuenta gratis en <a href="https://www.twilio.com/try-twilio" target="_blank" rel="noopener">twilio.com</a>.</li>
               <li>En la consola copia el <b>Account SID</b> y el <b>Auth Token</b> y pégalos aquí.</li>
-              <li>Abre <b>Messaging → Try it out → Send a WhatsApp message</b>. Desde cada celular que recibirá avisos, envía el mensaje <span class="mono">join …</span> que aparece ahí al <span class="mono">+1 415 523 8886</span>.</li>
-              <li>Prueba aquí abajo con uno de esos números.</li>
+              <li>En <b>Try it out → Send a WhatsApp message</b> elige el celular que recibirá avisos. Desde ese WhatsApp envía <span class="mono">join twilio-trial</span> al <span class="mono">+1 737 250 8034</span>.</li>
+              <li>Deja <b>Plantilla</b> vacía y prueba aquí abajo con ese número. La cuenta gratis permite un celular a la vez.</li>
             </ol>
           </div>
           <div class="group-title">Probar</div>
@@ -1939,7 +1940,7 @@
         });
         const body = () => {
           const v = Object.fromEntries(new FormData(form));
-          const out = { wa_mode: mode, wa_urgent: form.wa_urgent.checked, wa_phone_id: v.wa_phone_id, wa_template: v.wa_template, wa_lang: v.wa_lang, tw_sid: v.tw_sid, tw_from: v.tw_from };
+          const out = { wa_mode: mode, wa_urgent: form.wa_urgent.checked, wa_phone_id: v.wa_phone_id, wa_template: v.wa_template, wa_lang: v.wa_lang, tw_sid: v.tw_sid, tw_from: v.tw_from, tw_content: v.tw_content };
           if (v.wa_token) out.wa_token = v.wa_token;
           if (v.tw_token) out.tw_token = v.tw_token;
           return out;
@@ -1973,7 +1974,7 @@
             c.tw_token_set = saved.config.tw_token_set;
             const r = await api('/messaging/test', { method: 'POST', body: { channel: 'whatsapp', to } });
             if (r.link) $('#waTest', el).innerHTML = `<a class="btn btn-wa btn-lg" style="margin-top:12px" href="${esc(r.link)}" target="_blank" rel="noopener">${icon('chat')} Abrir WhatsApp</a>`;
-            else $('#waTest', el).innerHTML = stateBox(true, `Enviado a <b>+${esc(r.to)}</b>. Revisa ese WhatsApp.`);
+            else $('#waTest', el).innerHTML = stateBox(true, `Enviado a <b>+${esc(r.to)}</b>. Revisa ese WhatsApp.${r.template ? ' Con la cuenta gratis llega dentro de la plantilla de Twilio en inglés (Reminder: Appt N.A.V.I: …). Con una cuenta pagada llega el aviso completo en español.' : ''}`);
             setFieldError(form, [], false);
             SFX.play('success');
           } catch (e) {
@@ -1981,6 +1982,83 @@
             $('#waTest', el).innerHTML = stateBox(false, esc(e.message)) + (e.data && e.data.link ? `<a class="btn btn-wa btn-lg" style="margin-top:10px" href="${esc(e.data.link)}" target="_blank" rel="noopener">Enviar con un toque</a>` : '');
             SFX.play('error');
           }
+          btn.disabled = false;
+        });
+      }
+    });
+  }
+
+  async function openTgSettings() {
+    let data;
+    try { data = await api('/messaging'); } catch (e) { return toast({ title: 'No se pudo abrir', text: e.message, mood: 'sad' }); }
+    const c = data.config;
+    const st = data.status || S.channels || {};
+    const ready = bot => `<div class="group" style="margin-top:14px"><a class="cell has-icon" href="https://t.me/${esc(bot)}" target="_blank" rel="noopener">${ico('send', 'teal')}<div class="grow"><div class="t">@${esc(bot)}</div><div class="s">Tu bot está listo</div></div>${icon('chevron', 'chev')}</a></div>`;
+    openSheet({
+      title: 'Telegram',
+      left: `<button class="btn btn-plain" data-close>Cancelar</button>`,
+      right: `<button class="btn btn-plain" id="saveTg" style="font-weight:600">Guardar</button>`,
+      body: `
+        <form id="tgForm" novalidate autocomplete="off">
+          <div class="notif-hero">${ico('send', 'teal')}<div><b>Telegram a representantes</b><small>Gratis, automático y con el texto completo de N.A.V.I</small></div></div>
+          <div class="group-title">Bot</div>
+          <div class="group">
+            ${frow('tg_token', 'Token', { type: 'password', placeholder: c.tg_token_set ? '•••• guardado (deja vacío)' : (st.telegram_env ? '•••• en backend/.env' : '123456:ABC…'), attrs: 'autocomplete="new-password" spellcheck="false" class="mono"' })}
+          </div>
+          <div id="tgState">${st.telegram ? ready(st.telegramBot) : st.telegram_error ? stateBox(false, esc(st.telegram_error)) : ''}</div>
+          <ol class="steps">
+            <li>En Telegram abre <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> y envía <span class="mono">/newbot</span>.</li>
+            <li>Ponle un nombre (por ejemplo <b>N.A.V.I Avisos</b>) y un usuario que termine en <span class="mono">bot</span>.</li>
+            <li>BotFather te da un <b>token</b>. Pégalo aquí y toca <b>Probar</b>.</li>
+            <li>En la ficha de cada estudiante toca <b>Copiar enlace de Telegram</b> y envíaselo al representante. Al abrirlo y tocar <b>Iniciar</b>, queda vinculado.</li>
+          </ol>
+          <button type="button" class="btn btn-primary btn-lg" id="testTg" style="width:100%;margin-top:6px">Probar</button>
+          <div id="tgTest"></div>
+        </form>`,
+      onMount(el) {
+        const form = $('#tgForm', el);
+        const save = async () => {
+          const v = form.tg_token.value.trim();
+          const r = await api('/messaging', { method: 'PUT', body: v ? { tg_token: v } : {} });
+          c.tg_token_set = r.config.tg_token_set;
+          return r;
+        };
+        const test = async () => {
+          const r = await api('/messaging/test', { method: 'POST', body: { channel: 'telegram' } });
+          S.channels = { ...(S.channels || {}), telegram: true, telegramBot: r.bot };
+          $('#tgState', el).innerHTML = ready(r.bot);
+          $('#tgTest', el).innerHTML = stateBox(true, `Conectado con <b>@${esc(r.bot)}</b>. ${r.linked ? `${r.linked} representante${r.linked === 1 ? '' : 's'} ya vinculado${r.linked === 1 ? '' : 's'}.` : 'Ahora envía el enlace de Telegram desde la ficha de un estudiante.'}`);
+          setFieldError(form, [], false);
+          return r;
+        };
+        $('#testTg', el).addEventListener('click', async ev => {
+          const btn = ev.currentTarget;
+          if (!form.tg_token.value.trim() && !c.tg_token_set && !st.telegram_env) { setFieldError(form, ['tg_token']); return toast({ title: 'Pega el token del bot', mood: 'confused', sound: 'warn' }); }
+          btn.disabled = true;
+          $('#tgTest', el).innerHTML = '';
+          try {
+            await save();
+            await test();
+            form.tg_token.value = '';
+            form.tg_token.placeholder = '•••• guardado (deja vacío)';
+            SFX.play('success');
+          } catch (e) {
+            setFieldError(form, e.fields || ['tg_token'], false);
+            $('#tgTest', el).innerHTML = stateBox(false, esc(e.message));
+            SFX.play('error');
+          }
+          btn.disabled = false;
+        });
+        $('#saveTg', el).addEventListener('click', async ev => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          try {
+            await save();
+            const r = form.tg_token.value.trim() || c.tg_token_set || st.telegram_env ? await test().catch(e => { throw e; }) : null;
+            toast({ title: 'Telegram guardado', text: r ? '@' + r.bot : 'Sin bot', mood: 'happy', sound: 'success' });
+            closeSheet();
+            if (S.view === 'ajustes') renderView();
+          } catch (e) { setFieldError(form, e.fields || ['tg_token']); toast({ title: 'No se pudo guardar', text: e.message, mood: 'sad' }); }
           btn.disabled = false;
         });
       }
@@ -3026,7 +3104,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgMail"' : ''}>${ico('door', 'graphite')}<div class="grow"><div class="t">Copia a la institución</div><div class="s">${ch.inst_email ? esc(ch.inst_email) : 'DECE o inspección'}</div></div><span class="v">${ch.inst_email ? { URGENT: 'Urgentes', ALL: 'Todos', NONE: 'Nunca' }[ch.inst_cc] || '' : 'No'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgWa"' : ''}>${ico('chat', 'green')}<div class="grow"><div class="t">WhatsApp</div><div class="s">${ch.wa_urgent === false ? 'Solo si no llegó otro aviso' : 'También en ausencias y emergencias'}</div></div><span class="v">${ch.whatsapp === 'TWILIO' ? 'Twilio' : ch.whatsapp === 'API' ? 'Automático' : 'Un toque'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
               <button class="cell has-icon" data-act="cfgSms">${ico('phone', 'indigo')}<div class="grow"><div class="t">SMS al celular</div><div class="s">${ch.sms ? (ch.sms_device ? 'Desde ' + esc(ch.sms_device) : 'Falta un celular que los envíe') : 'Mensaje de texto normal, sin internet'}</div></div><span class="v">${ch.sms ? (ch.sms_device ? 'Activo' : 'En espera') : 'No'}</span>${icon('chevron', 'chev')}</button>
-              <div class="cell has-icon">${ico('send', 'teal')}<div class="grow t">Telegram</div><span class="v">${ch.telegram ? '@' + esc(ch.telegramBot) : 'No configurado'}</span></div>
+              <${can ? 'button' : 'div'} class="cell has-icon" ${can ? 'data-act="cfgTg"' : ''}>${ico('send', 'teal')}<div class="grow"><div class="t">Telegram</div><div class="s">${ch.telegram ? '@' + esc(ch.telegramBot) : 'Gratis y automático, con un bot propio'}</div></div><span class="v">${ch.telegram ? 'Activo' : 'No'}</span>${can ? icon('chevron', 'chev') : ''}</${can ? 'button' : 'div'}>
             </div>
             <p class="group-foot">${can ? 'Toca para configurar y enviar una prueba.' : 'Solo el administrador puede configurar los canales.'}</p>
             ${isAdmin() ? `<div class="group-title">Usuarios</div><div class="group" id="usersBox"><div class="cell"><div class="grow s">Cargando…</div></div></div>` : ''}
@@ -3152,6 +3230,7 @@ ${sim ? `              <div class="lbl">Tarjetas de ${esc(course ? course.code :
   handlers.cfgMail = () => openMailSettings();
   handlers.cfgWa = () => openWaSettings();
   handlers.cfgSms = () => openSmsSettings();
+  handlers.cfgTg = () => openTgSettings();
   handlers.sfx = el => SFX.setSounds(el.checked);
   handlers.voices = el => { SFX.setVoices(el.checked); if (el.checked) SFX.bot((S.user && S.user.avatar) || 'triangle', 'happy'); };
   handlers.toggleDay = el => { el.classList.toggle('on'); haptic(5); };
