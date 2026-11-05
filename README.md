@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme/banner.png" alt="N.A.V.I · Near Agent Vital Intelligent · Toca. Listo." width="100%">
+  <img src="docs/readme/banner.png" alt="N.A.V.I · Near Action Vital Interface · Toca. Listo." width="100%">
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@
 <a id="significado"></a>
 
 <p align="center">
-  <img src="docs/readme/significado.png" alt="N de Near, A de Agent, V de Vital, I de Intelligent" width="100%">
+  <img src="docs/readme/significado.png" alt="N de Near, A de Action, V de Vital, I de Interface" width="100%">
 </p>
 
 <a id="como-funciona"></a>
