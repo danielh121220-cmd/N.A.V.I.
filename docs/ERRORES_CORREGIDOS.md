@@ -198,3 +198,14 @@
 | Problema | Corrección |
 | --- | --- |
 | Con el hotspot de Windows (la PC comparte su internet), la cámara decía `No llego al servidor` y nunca enviaba fotos. El lector sí funcionaba. | La PC tiene dos direcciones: la del WiFi (192.168.0.x) y la del hotspot (192.168.137.1). `servidor.h` solo traía la primera, que desde el hotspot no responde bien, y la búsqueda automática de la cámara fallaba sin avisar. Ahora el servidor escribe todas sus direcciones en `servidor.h` (`SERVER_HOSTS`), y la cámara (camara-3.6) prueba la búsqueda en la red, cada dirección y la puerta de enlace, guarda la que responde y explica en el Monitor serie qué está probando. |
+
+## Ronda 17 (WhatsApp con Twilio y Telegram desde la app)
+
+| Problema | Corrección |
+| --- | --- |
+| Con la cuenta gratis de Twilio, todo aviso por WhatsApp daba `21654` (pide plantilla) y luego `21655` (plantilla no válida). | La cuenta de prueba no deja mandar texto propio ni plantillas creadas por uno. Ahora N.A.V.I intenta primero el aviso completo y, si Twilio lo rechaza, lo envía solo con la plantilla gratuita de Twilio desde el +1 737 250 8034, con el nombre del estudiante y la hora dentro. El campo **Plantilla** puede quedar vacío. |
+| `fetch failed` al probar WhatsApp cuando el internet parpadeaba. | Cada envío reintenta hasta 3 veces y el error se explica en español. |
+| El error de plantilla no decía qué plantilla se había usado. | El aviso muestra el código `HX…` que Twilio rechazó. |
+| Después de actualizar, el navegador seguía mostrando la app vieja (sin el campo Plantilla). | Cada versión cambia la caché de la app (`navi-v19`), así que la versión nueva se carga sola. |
+| Telegram solo se configuraba editando `backend/.env` y reiniciando. | El token del bot se pega en **Ajustes → Telegram**, con botón **Probar**, sin reiniciar. El bot también responde si alguien le escribe sin el enlace. |
+| Si se guardaba y probaba el token de Telegram muy rápido, podía salir un error falso. | Solo el último intento puede marcar error. |
